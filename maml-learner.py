@@ -351,8 +351,11 @@ class Learner:
 
         self.model = self.init_model()
         checkpoint = torch.load(path, map_location=self.map_location)
-        self.inner_lrs_dict = checkpoint['inner_lrs_dict']
-        self.model.load_state_dict(checkpoint['model_state_dict'], strict=False)
+        if 'inner_lrs_dict' in checkpoint and 'model_state_dict' in checkpoint:
+            self.inner_lrs_dict = checkpoint['inner_lrs_dict']
+            self.model.load_state_dict(checkpoint['model_state_dict'], strict=False)
+        else:
+            self.model.load_state_dict(checkpoint, strict=False)
         self.ops_counter.set_base_params(self.model)
         
         for step, task_dict in enumerate(self.test_queue.get_tasks()):
