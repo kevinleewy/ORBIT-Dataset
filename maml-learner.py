@@ -223,7 +223,10 @@ class Learner:
                     self.validate()
 
             # save the final model
-            torch.save(self.model.state_dict(), self.checkpoint_path_final)
+            torch.save({
+                'inner_lrs_dict': self.inner_lrs_dict,
+                'model_state_dict': self.model.state_dict()
+            }, self.checkpoint_path_final)
 
         if self.args.mode == 'train_test':
             self.test(self.checkpoint_path_final)
@@ -336,7 +339,10 @@ class Learner:
         # save the model if validation is the best so far
         if self.validation_evaluator.is_better(stats_per_video):
             self.validation_evaluator.replace(stats_per_video)
-            torch.save(self.model.state_dict(), self.checkpoint_path_validation)
+            torch.save({
+                'inner_lrs_dict': self.inner_lrs_dict,
+                'model_state_dict': self.model.state_dict()
+            }, self.checkpoint_path_validation)
             print_and_log(self.logfile, 'best validation model was updated.\n')
 
         self.validation_evaluator.reset()
@@ -344,7 +350,9 @@ class Learner:
     def test(self, path):
 
         self.model = self.init_model()
-        self.model.load_state_dict(torch.load(path, map_location=self.map_location), strict=False)
+        checkpoint = torch.load(path, map_location=self.map_location)
+        self.inner_lrs_dict = checkpoint['inner_lrs_dict']
+        self.model.load_state_dict(checkpoint['model_state_dict'], strict=False)
         self.ops_counter.set_base_params(self.model)
         
         for step, task_dict in enumerate(self.test_queue.get_tasks()):
@@ -389,6 +397,7 @@ class Learner:
     def save_checkpoint(self, epoch):
         torch.save({
             'epoch': epoch,
+            'inner_lrs_dict': self.inner_lrs_dict,
             'model_state_dict': self.model.state_dict(),
             'optimizer_state_dict': self.optimizer.state_dict(),
             'best_stats': self.validation_evaluator.get_current_best_stats()
@@ -397,6 +406,7 @@ class Learner:
     def load_checkpoint(self):
         checkpoint = torch.load(os.path.join(self.checkpoint_dir, 'checkpoint.pt'))
         self.start_epoch = checkpoint['epoch']
+        self.inner_lrs_dict = checkpoint['inner_lrs_dict']
         self.model.load_state_dict(checkpoint['model_state_dict'])
         self.optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
         self.validation_evaluator.replace(checkpoint['best_stats'])
