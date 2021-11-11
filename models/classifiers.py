@@ -64,6 +64,7 @@ class LinearClassifier(nn.Module):
             nn.init.kaiming_uniform_(self.linear.weight, mode="fan_out")
             nn.init.zeros_(self.linear.bias)
         self.linear.to(device)
+        self.device = device
   
     def predict(self, features, ops_counter=None):
         """
@@ -74,7 +75,7 @@ class LinearClassifier(nn.Module):
         t1 = time.time()
         out = self.linear(features)
         if ops_counter:
-            torch.cuda.synchronize()
+            if self.device != torch.device('cpu'): torch.cuda.synchronize()
             ops_counter.log_time(time.time() - t1)
             ops_counter.compute_macs(self.linear, features)
         
@@ -93,6 +94,8 @@ class HeadClassifier(nn.Module):
         :return: Nothing.
         """
         super().__init__()
+
+        self.device = torch.device('cuda') if torch.cuda.is_available() else torch.device('cpu')
     
     def _build_class_reps(self, context_features, context_labels, ops_counter):
         class_reps = OrderedDict()
@@ -103,7 +106,7 @@ class HeadClassifier(nn.Module):
             class_rep = self._mean_pooling(class_features)
             class_reps[c.item()] = class_rep
             if ops_counter:
-                torch.cuda.synchronize()
+                if self.device != torch.device('cpu'): torch.cuda.synchronize()
                 ops_counter.log_time(time.time() - t1)
                 ops_counter.add_macs(context_features.size(0)) # selecting class features
                 ops_counter.add_macs(class_features.size(0) * class_features.size(1)) # mean pooling
@@ -174,7 +177,7 @@ class VersaClassifier(HeadClassifier):
             class_weight.append(self.weight_processor(nu))
             class_bias.append(self.bias_processor(nu))
             if ops_counter:
-                torch.cuda.synchronize()
+                if self.device != torch.device('cpu'): torch.cuda.synchronize()
                 ops_counter.log_time(time.time() - t1)
                 ops_counter.compute_macs(self.weight_processor, nu)
                 ops_counter.compute_macs(self.bias_processor, nu)
@@ -228,7 +231,7 @@ class PrototypicalClassifier(HeadClassifier):
             class_weight.append(2 * nu)
             class_bias.append((-torch.matmul(nu, nu.t()))[None, None])
             if ops_counter:
-                torch.cuda.synchronize()
+                if self.device != torch.device('cpu'): torch.cuda.synchronize()
                 ops_counter.log_time(time.time() - t1)
                 ops_counter.add_macs(nu.size(0) * nu.size(1)) # 2* in class weight
                 ops_counter.add_macs(nu.size(0)**2 * nu.size(1)) # matmul in  class bias
@@ -277,7 +280,7 @@ class MahalanobisClassifier(HeadClassifier):
             precisions.append(torch.inverse(covariance_matrix))
 
             if ops_counter:
-                torch.cuda.synchronize()
+                if self.device != torch.device('cpu'): torch.cuda.synchronize()
                 ops_counter.log_time(time.time() - t1)
                 ops_counter.add_macs(context_features.size(0)) # selecting class features
                 ops_counter.add_macs(class_features.size(0) * class_features.size(1)) # mean pooling

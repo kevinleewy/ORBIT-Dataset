@@ -6,6 +6,12 @@ import glob
 import argparse
 import numpy as np
 
+# To avoid files like .DS_Store on MacOS
+def listdir_nohidden(path):
+    for f in os.listdir(path):
+        if not f.startswith('.'):
+            yield f
+
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--data_path", required=True, type=str, help="Path to ORBIT dataset root (either unfiltered or benchmark)")
@@ -14,7 +20,7 @@ def main():
     args = parser.parse_args()
 
     if not args.combine_modes:
-        modes = os.listdir(args.data_path) if args.with_modes else ['']
+        modes = listdir_nohidden(args.data_path) if args.with_modes else ['']
         for mode in modes:
             num_videos_by_user, num_frames_by_user, video_types = get_tallies_by_user(os.path.join(args.data_path, mode))
 
@@ -25,7 +31,7 @@ def main():
 
             print_stats_as_table(mode, len(num_videos_by_user), num_frames_stats_by_type, count_stats_by_type)
     else:
-        modes = os.listdir(args.data_path) if args.with_modes else ['']
+        modes = listdir_nohidden(args.data_path) if args.with_modes else ['']
         num_videos_by_user, num_frames_by_user = [], []
         for mode in modes:
             nv, nf, video_types = get_tallies_by_user(os.path.join(args.data_path, mode))
@@ -199,20 +205,20 @@ def get_tallies_by_user(path):
     counts_by_user = []
     num_frames_by_user = []
     video_types = []
-    for user in os.listdir(path):
+    for user in listdir_nohidden(path):
         user_dir = os.path.join(path, user)
         if os.path.isdir(user_dir):
             counts_by_obj, num_frames_by_obj = [], []
-            for obj in os.listdir(user_dir):
+            for obj in listdir_nohidden(user_dir):
                 obj_dir = os.path.join(user_dir, obj)
                 counts_by_type, num_frames_by_type = {}, {}
-                for video_type in os.listdir(obj_dir):
+                for video_type in listdir_nohidden(obj_dir):
                     video_types.append(video_type)
                     type_dir = os.path.join(obj_dir, video_type)
-                    num_type = len(os.listdir(type_dir))
+                    num_type = len(list(listdir_nohidden(type_dir)))
 
                     num_frames = []
-                    for vid in os.listdir(type_dir):
+                    for vid in listdir_nohidden(type_dir):
                         num_frames.append(len(glob.glob(os.path.join(type_dir, vid, "*.jpg"))))
                 
                     counts_by_type.update( { video_type : num_type } )

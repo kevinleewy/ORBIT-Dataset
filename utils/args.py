@@ -110,6 +110,8 @@ def parse_args(learner='default'):
                         help="Number of inner loop (MAML, typically 15) or fine-tuning (FineTuner, typically 50) steps.")
         parser.add_argument("--inner_learning_rate", "--inner_lr", type=float, default=0.1,
                         help="Learning rate for inner loop (MAML) or fine-tuning (FineTuner) (default: 0.1).")
+        parser.add_argument("--use_learnable_learning_rates", default=False, action="store_true",
+                        help="If True, do Learning Per-Layer Per-Step Learning Rates and Gradient Directions (LSLR)")
              
     args = parser.parse_args()
     args.preload_clips = not args.no_preload_clips

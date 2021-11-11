@@ -272,7 +272,7 @@ def resnet18_84(pretrained=False, pretrained_model_path=None, batch_norm='basic'
         model = ResNet(BasicBlock, [2, 2, 2, 2], nl, initial_pool=False, conv1_kernel_size=5, **kwargs)
 
     if pretrained:
-        ckpt_dict = torch.load(pretrained_model_path)
+        ckpt_dict = torch.load(pretrained_model_path, map_location='cpu')
         model.load_state_dict(ckpt_dict['state_dict'])
 
     return model

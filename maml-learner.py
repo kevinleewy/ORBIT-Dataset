@@ -31,6 +31,7 @@ SOFTWARE.
 import os
 import time
 import torch
+import torch.nn as nn
 import random
 import numpy as np
 import torch.backends.cudnn as cudnn
@@ -81,6 +82,21 @@ class Learner:
         self.loss = cross_entropy
         self.train_task_fn = self.train_task_in_batches if self.args.with_lite else self.train_task
 
+        self.optimizer_type = 'lslr' if self.args.use_learnable_learning_rates else 'sgd'
+        param_dict = self.get_inner_loop_parameter_dict(params=self.model.named_parameters())
+        self.inner_lrs_dict = nn.ParameterDict()
+
+        if self.args.classifier == 'linear':
+            additional_param_keys = ['classifier.linear.weight', 'classifier.linear.bias']
+        else:
+            additional_param_keys = []
+
+        for key in list(param_dict.keys()) + additional_param_keys:
+            self.inner_lrs_dict[key.replace('.','-')] = nn.Parameter(
+                data=torch.ones(self.args.num_grad_steps + 1) * self.args.inner_learning_rate,
+                requires_grad=self.args.use_learnable_learning_rates)
+
+
     def init_dataset(self):
 
         dataset_info = {
@@ -122,9 +138,22 @@ class Learner:
     
     def init_inner_loop_model(self):
         inner_loop_model = self.init_model()
-        inner_loop_model.load_state_dict(self.model.state_dict(), strict=False) 
+        inner_loop_model.load_state_dict(self.model.state_dict(), strict=False)
         self.zero_grads(inner_loop_model)
         return inner_loop_model
+
+    def get_inner_loop_parameter_dict(self, params):
+        """
+        Returns a dictionary with the parameters to use for inner loop updates.
+        :param params: A dictionary of the network's parameters.
+        :return: A dictionary of the parameters to use for the inner loop optimization process.
+        """
+        param_dict = dict()
+        for name, param in params:
+            if param.requires_grad:
+                param_dict[name] = param.to(device=self.device)
+
+        return param_dict
 
     def zero_grads(self, model):
         # init grad buffers to 0, otherwise None until first backward
@@ -213,7 +242,8 @@ class Learner:
         inner_loop_model.set_test_mode(True)
         
         # do inner loop, updates inner_loop_model
-        learning_args=(self.args.inner_learning_rate, self.loss, 'sgd', 0.1)
+        learning_args=(self.inner_lrs_dict, self.loss, self.optimizer_type, 0.1)
+        # learning_args=(self.args.inner_learning_rate, self.loss, self.optimizer_type, 0.1)
         inner_loop_model.personalise(context_clips, context_labels, learning_args)
 
         # forward target set through inner_loop_model
@@ -239,7 +269,8 @@ class Learner:
         inner_loop_model.set_test_mode(True)
         
         # do inner loop, updates inner_loop_model
-        learning_args=(self.args.inner_learning_rate, self.loss, 'sgd', 0.1)
+        learning_args=(self.inner_lrs_dict, self.loss, self.optimizer_type, 0.1)
+        # learning_args=(self.args.inner_learning_rate, self.loss, self.optimizer_type, 0.1)
         inner_loop_model.personalise(context_clips, context_labels, learning_args)
 
         # forward target set through inner_loop_model in batches
@@ -249,7 +280,7 @@ class Learner:
         for batch_target_clips, batch_target_labels in target_clip_loader:
             batch_target_clips = batch_target_clips.to(self.device)
             batch_target_labels = batch_target_labels.to(self.device)
-            batch_target_logits = inner_loop_model.predict_a_batch(batch_target_clips)  
+            batch_target_logits = inner_loop_model.predict_a_batch(batch_target_clips)
             target_logits.extend(batch_target_logits.detach())
            
             # compute loss on target batch
@@ -263,7 +294,7 @@ class Learner:
 
         # copy gradients from inner_loop_model to self.model
         self.copy_grads(inner_loop_model, self.model)
-       
+
         # update evaluator with task accuracy
         target_logits = torch.stack(target_logits)
         self.train_evaluator.update_stats(target_logits, target_labels)
@@ -283,7 +314,8 @@ class Learner:
             inner_loop_model.set_test_mode(True)
 
             # take a few grad steps using context set
-            learning_args=(self.args.inner_learning_rate, self.loss, 'sgd', 0.1)
+            learning_args=(self.inner_lrs_dict, self.loss, self.optimizer_type, 0.1)
+            # learning_args=(self.args.inner_learning_rate, self.loss, self.optimizer_type, 0.1)
             inner_loop_model.personalise(context_clips, context_labels, learning_args)
 
             with torch.no_grad():
@@ -316,6 +348,7 @@ class Learner:
         self.ops_counter.set_base_params(self.model)
         
         for step, task_dict in enumerate(self.test_queue.get_tasks()):
+
             context_clips, context_labels, target_clips_by_video, target_labels_by_video = unpack_task(task_dict, self.device, context_to_device=False, preload_clips=self.args.preload_clips)
             # user's target videos are only returned for their first task (to avoid multiple copies), so cache it
             if step % self.args.test_tasks_per_user == 0:
@@ -326,7 +359,8 @@ class Learner:
             inner_loop_model.set_test_mode(True)
 
             # inner grad update - take a few grad steps using context set
-            learning_args=(self.args.inner_learning_rate, self.loss, 'sgd', 0.1)
+            learning_args=(self.inner_lrs_dict, self.loss, self.optimizer_type, 0.1)
+            # learning_args=(self.args.inner_learning_rate, self.loss, self.optimizer_type, 0.1)
             inner_loop_model.personalise(context_clips, context_labels, learning_args, ops_counter=self.ops_counter)
             # add task's ops to self.ops_counter
             self.ops_counter.task_complete()

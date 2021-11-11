@@ -39,7 +39,7 @@ class DatasetQueue:
                     squeezed_batch[k] = [b.squeeze(0) for b in v]
             elif isinstance(v, np.ndarray):
                 squeezed_batch[k] = v
-
+        
         return squeezed_batch
     
     def get_num_users(self):

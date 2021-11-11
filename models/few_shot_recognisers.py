@@ -137,7 +137,7 @@ class FewShotRecogniser(nn.Module):
             features = self.feature_extractor(clips, feature_adapter_params)
 
         if ops_counter:
-            torch.cuda.synchronize()
+            if self.device != torch.device('cpu'): torch.cuda.synchronize()
             ops_counter.log_time(time.time() - t1)
             ops_counter.compute_macs(self.feature_extractor, clips, feature_adapter_params)
             
@@ -153,18 +153,28 @@ class FewShotRecogniser(nn.Module):
         :return: (torch.Tensor) Adapted frame features flattened across all clips.
         """ 
         features = []
+        # print('_get_features_in_batches:_set_model_state')
         self._set_model_state(context)
+        # print('_get_features_in_batches:_set_model_state-done')
         for batch_clips in clip_loader:
+            # print('_get_features_in_batches:loop')
             batch_clips = batch_clips.to(self.device, non_blocking=True)
             t1 = time.time()
             if self.args.use_two_gpus:
+                # print('_get_features_in_batches:use_two_gpus')
                 batch_clips = batch_clips.cuda(1)
+                # print('_get_features_in_batches:feature_extractor')
                 batch_features = self.feature_extractor(batch_clips, feature_adapter_params).cuda(0)
+                # print('_get_features_in_batches:feature_extractor-done')
             else:
+                # print('_get_features_in_batches:feature_extractor')
                 batch_features = self.feature_extractor(batch_clips, feature_adapter_params)
+                # print('_get_features_in_batches:feature_extractor-done')
 
             if ops_counter:
-                torch.cuda.synchronize()
+                # print('cuda nani?')
+                if self.device != torch.device('cpu'): torch.cuda.synchronize()
+                # print('cuda nani!')
                 ops_counter.log_time(time.time() - t1)
                 ops_counter.compute_macs(self.feature_extractor, batch_clips, feature_adapter_params)
             
@@ -183,7 +193,9 @@ class FewShotRecogniser(nn.Module):
         feature_adapter_params = self.feature_adapter(task_embedding)
 
         if ops_counter:
-            torch.cuda.synchronize()
+            # print('cuda nani?')
+            if self.device != torch.device('cpu'): torch.cuda.synchronize()
+            # print('cuda nani!')
             ops_counter.log_time(time.time() - t1)
             ops_counter.compute_macs(self.feature_adapter, task_embedding)
         
@@ -201,7 +213,7 @@ class FewShotRecogniser(nn.Module):
         reps = self.set_encoder(context_clips)
 
         if ops_counter:
-            torch.cuda.synchronize()
+            if self.device != torch.device('cpu'): torch.cuda.synchronize()
             ops_counter.log_time(time.time() - t1)
             ops_counter.compute_macs(self.set_encoder, context_clips)
 
@@ -225,7 +237,7 @@ class FewShotRecogniser(nn.Module):
             batch_reps = self.set_encoder(batch_clips)
 
             if ops_counter:
-                torch.cuda.synchronize()
+                if self.device != torch.device('cpu'): torch.cuda.synchronize()
                 ops_counter.log_time(time.time() - t1)
                 ops_counter.compute_macs(self.set_encoder, batch_clips)
 
@@ -243,7 +255,7 @@ class FewShotRecogniser(nn.Module):
         t1 = time.time()
         pooled_features = self.frame_pooler(features)
         if ops_counter:
-            torch.cuda.synchronize()
+            if self.device != torch.device('cpu'): torch.cuda.synchronize()
             ops_counter.log_time(time.time() - t1)
             ops_counter.add_macs(features.size(0) * features.size(1))
 
@@ -313,18 +325,23 @@ class MultiStepFewShotRecogniser(FewShotRecogniser):
         Function that learns a new task by taking a fixed number of gradient steps on the task's context set. For each task, a new linear classification layer is added (and FiLM layers if self.args.adapt_features == True).
         :param context_clips: (np.ndarray or torch.Tensor) Context clips (either as paths or tensors), each composed of self.args.clip_length contiguous frames.
         :param context_clip_labels: (torch.Tensor) Video-level labels for each context clip.
-        :param learning_args: (float, func, str, float) Learning hyper-parameters including learning rate, loss function, optimiser type and factor to scale the extractor's learning rate.
+        :param learning_args: (float, func, str, float, bool) Learning hyper-parameters including learning rate, loss function, optimiser type and factor to scale the extractor's learning rate.
         :param ops_counter: (utils.OpsCounter or None) Object that counts operations performed.
         :return: Nothing.
         """ 
+
         lr, loss_fn, optimizer_type, extractor_scale_factor = learning_args
         num_classes = len(torch.unique(context_clip_labels))
         self.configure_classifier(num_classes, init_zeros=True)
         self.configure_feature_adapter()
-        inner_loop_optimizer = init_optimizer(self, lr, optimizer_type, extractor_scale_factor)
+
+        if optimizer_type == 'lslr':
+            inner_loop_optimizer = init_optimizer(self, lr, optimizer_type, extractor_scale_factor)
+        else:
+            inner_loop_optimizer = init_optimizer(self, lr, optimizer_type, extractor_scale_factor)
 
         context_clip_loader = get_clip_loader((context_clips, context_clip_labels), self.args.batch_size, with_labels=True)
-        for _ in range(self.args.num_grad_steps):
+        for i in range(self.args.num_grad_steps):
             for batch_context_clips, batch_context_labels in context_clip_loader:
                 batch_context_clips = batch_context_clips.to(self.device)
                 batch_context_labels = batch_context_labels.to(self.device)
@@ -334,14 +351,19 @@ class MultiStepFewShotRecogniser(FewShotRecogniser):
                 batch_context_loss.backward()
 
                 if ops_counter:
-                    torch.cuda.synchronize()
+                    if self.device != torch.device('cpu'): torch.cuda.synchronize()
                     ops_counter.log_time(time.time() - t1)
                  
             t1 = time.time()
-            inner_loop_optimizer.step()
+
+            if optimizer_type == 'lslr':
+                inner_loop_optimizer.step(step_num=i)
+            else:
+                inner_loop_optimizer.step()
             inner_loop_optimizer.zero_grad()
+
             if ops_counter:
-                torch.cuda.synchronize()
+                if self.device != torch.device('cpu'): torch.cuda.synchronize()
                 ops_counter.log_time(time.time() - t1)
  
     def predict(self, clips, ops_counter=None, context=False):
@@ -354,9 +376,13 @@ class MultiStepFewShotRecogniser(FewShotRecogniser):
         """
         clip_loader = get_clip_loader(clips, self.args.batch_size)
         task_embedding = None # multi-step methods do not use set encoder
+        # print('MultiStepFewShotRecogniser._get_feature_adapter_params:')
         self.feature_adapter_params = self._get_feature_adapter_params(task_embedding, ops_counter)
+        # print('MultiStepFewShotRecogniser._get_features_in_batches:')
         features = self._get_features_in_batches(clip_loader, self.feature_adapter_params, ops_counter, context=context)
+        # print('MultiStepFewShotRecogniser._pool_features:')
         features = self._pool_features(features, ops_counter)
+        # print('MultiStepFewShotRecogniser.classifier.predict:')
         return self.classifier.predict(features, ops_counter)
     
     def predict_a_batch(self, clips, ops_counter=None, context=False):

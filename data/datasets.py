@@ -10,6 +10,12 @@ import numpy as np
 from torch.utils.data import Dataset
 from data.transforms import orbit_transform
 
+# To avoid files like .DS_Store on MacOS
+def listdir_nohidden(path):
+    for f in os.listdir(path):
+        if not f.startswith('.'):
+            yield f
+
 class ORBITDataset(Dataset):
     """
     Base class for ORBIT dataset.
@@ -56,19 +62,25 @@ class ORBITDataset(Dataset):
         obj2cluster = self.get_label_map(self.cluster_classes)
 
         obj_id, vid_id = 0, 0
-        users = [u for u in os.listdir(self.root) if os.path.isdir(os.path.join(self.root, u))]
+        users = [u for u in listdir_nohidden(self.root) if os.path.isdir(os.path.join(self.root, u))]
         for user in sorted(users): # users
             self.users.append(user)
             user_path = os.path.join(self.root, user)
             obj_ids = []
-            for obj in sorted(os.listdir(user_path)): #objects per user
+            for obj in sorted(listdir_nohidden(user_path)): #objects per user
+                
                 obj_ids.append(obj_id)
                 obj_path = os.path.join(user_path, obj)
                 videos_by_type = {}
-                for video_type in os.listdir(obj_path):
+                for video_type in listdir_nohidden(obj_path):
+
+                    # To avoid files like .DS_Store on MacOS
+                    if video_type.startswith('.'):
+                        continue
+
                     videos_by_type[video_type] = []
                     type_path = os.path.join(obj_path, video_type)
-                    for vid in sorted(os.listdir(type_path)):
+                    for vid in sorted(listdir_nohidden(type_path)):
                         obj_cluster = obj2cluster [ vid2cluster[vid] ]
                         vid_path = os.path.join(type_path, vid)
                         videos_by_type[video_type].append(vid_path)

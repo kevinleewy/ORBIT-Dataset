@@ -284,7 +284,7 @@ class Learner:
 
                 # dummy warm-up to get correct timing
                 self.model.personalise(context_clips, context_labels, ops_counter=False)
-                torch.cuda.synchronize()
+                if self.device != torch.device('cpu'): torch.cuda.synchronize()
                 self.model.personalise(context_clips, context_labels, ops_counter=self.ops_counter)
 
                 # loop through each target video
