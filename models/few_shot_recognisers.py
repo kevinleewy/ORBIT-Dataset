@@ -335,10 +335,7 @@ class MultiStepFewShotRecogniser(FewShotRecogniser):
         self.configure_classifier(num_classes, init_zeros=True)
         self.configure_feature_adapter()
 
-        if optimizer_type == 'lslr':
-            inner_loop_optimizer = init_optimizer(self, lr, optimizer_type, extractor_scale_factor)
-        else:
-            inner_loop_optimizer = init_optimizer(self, lr, optimizer_type, extractor_scale_factor)
+        inner_loop_optimizer = init_optimizer(self, lr, optimizer_type, extractor_scale_factor)
 
         context_clip_loader = get_clip_loader((context_clips, context_clip_labels), self.args.batch_size, with_labels=True)
         for i in range(self.args.num_grad_steps):

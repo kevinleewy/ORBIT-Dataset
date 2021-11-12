@@ -64,7 +64,7 @@ optimizers = {
 def cross_entropy(test_logits, test_labels, reduction='mean'):
     return F.cross_entropy(test_logits, test_labels, reduction=reduction)
     
-def init_optimizer(model, lr, optimizer_type='adam', extractor_scale_factor=1.0):
+def init_optimizer(model, lr, optimizer_type='adam', extractor_scale_factor=1.0, additional_params=None):
     
     optimizer_fn = optimizers[optimizer_type]
 
@@ -84,10 +84,23 @@ def init_optimizer(model, lr, optimizer_type='adam', extractor_scale_factor=1.0)
         feature_extractor_params = list(map(id, model.feature_extractor.parameters()))
         base_params = filter(lambda p: id(p) not in feature_extractor_params, model.parameters())
 
-        optimizer = optimizer_fn([
-                            {'params': base_params },
-                            {'params': model.feature_extractor.parameters(), 'lr': lr * extractor_scale_factor}
-                            ], lr=lr)
+        params_list = [
+                        {'params': base_params },
+                        {'params': model.feature_extractor.parameters(), 'lr': lr * extractor_scale_factor}
+                    ]
+
+        if additional_params:
+            params_list.append({'params': additional_params })
+
+        optimizer = optimizer_fn(params_list, lr=lr)
+
+    optimizer.zero_grad()
+    return optimizer
+
+def init_inner_lr_optimizer(inner_lr, outer_lr, optimizer_type='adam'):
+    
+    optimizer_fn = optimizers[optimizer_type]
+    optimizer = optimizer_fn(inner_lr, lr=outer_lr)
     optimizer.zero_grad()
     return optimizer
 

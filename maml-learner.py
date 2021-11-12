@@ -40,7 +40,7 @@ from data.dataloaders import DataLoader
 from models import MultiStepFewShotRecogniser
 from utils.args import parse_args
 from utils.ops_counter import OpsCounter
-from utils.optim import cross_entropy, init_optimizer
+from utils.optim import cross_entropy, init_optimizer, init_inner_lr_optimizer
 from utils.data import get_clip_loader, unpack_task, attach_frame_history
 from utils.logging import print_and_log, get_log_files, stats_to_str
 from utils.eval_metrics import TrainEvaluator, ValidationEvaluator, TestEvaluator
@@ -180,7 +180,7 @@ class Learner:
        
             self.zero_grads(self.model)
             extractor_scale_factor=0.1 if self.args.pretrained_extractor_path else 1.0
-            self.optimizer = init_optimizer(self.model, self.args.learning_rate, extractor_scale_factor=extractor_scale_factor)
+            self.optimizer = init_optimizer(self.model, self.args.learning_rate, extractor_scale_factor=extractor_scale_factor, additional_params=self.inner_lrs_dict)
 
             for epoch in range(self.args.epochs):
                 losses = []
@@ -245,8 +245,10 @@ class Learner:
         inner_loop_model.set_test_mode(True)
         
         # do inner loop, updates inner_loop_model
-        learning_args=(self.inner_lrs_dict, self.loss, self.optimizer_type, 0.1)
-        # learning_args=(self.args.inner_learning_rate, self.loss, self.optimizer_type, 0.1)
+        if self.optimizer_type == 'lslr':
+            learning_args=(self.inner_lrs_dict, self.loss, self.optimizer_type, 0.1)
+        else:
+            learning_args=(self.args.inner_learning_rate, self.loss, self.optimizer_type, 0.1)
         inner_loop_model.personalise(context_clips, context_labels, learning_args)
 
         # forward target set through inner_loop_model
@@ -272,8 +274,10 @@ class Learner:
         inner_loop_model.set_test_mode(True)
         
         # do inner loop, updates inner_loop_model
-        learning_args=(self.inner_lrs_dict, self.loss, self.optimizer_type, 0.1)
-        # learning_args=(self.args.inner_learning_rate, self.loss, self.optimizer_type, 0.1)
+        if self.optimizer_type == 'lslr':
+            learning_args=(self.inner_lrs_dict, self.loss, self.optimizer_type, 0.1)
+        else:
+            learning_args=(self.args.inner_learning_rate, self.loss, self.optimizer_type, 0.1)
         inner_loop_model.personalise(context_clips, context_labels, learning_args)
 
         # forward target set through inner_loop_model in batches
@@ -317,8 +321,10 @@ class Learner:
             inner_loop_model.set_test_mode(True)
 
             # take a few grad steps using context set
-            learning_args=(self.inner_lrs_dict, self.loss, self.optimizer_type, 0.1)
-            # learning_args=(self.args.inner_learning_rate, self.loss, self.optimizer_type, 0.1)
+            if self.optimizer_type == 'lslr':
+                learning_args=(self.inner_lrs_dict, self.loss, self.optimizer_type, 0.1)
+            else:
+                learning_args=(self.args.inner_learning_rate, self.loss, self.optimizer_type, 0.1)
             inner_loop_model.personalise(context_clips, context_labels, learning_args)
 
             with torch.no_grad():
@@ -370,8 +376,10 @@ class Learner:
             inner_loop_model.set_test_mode(True)
 
             # inner grad update - take a few grad steps using context set
-            learning_args=(self.inner_lrs_dict, self.loss, self.optimizer_type, 0.1)
-            # learning_args=(self.args.inner_learning_rate, self.loss, self.optimizer_type, 0.1)
+            if self.optimizer_type == 'lslr':
+                learning_args=(self.inner_lrs_dict, self.loss, self.optimizer_type, 0.1)
+            else:
+                learning_args=(self.args.inner_learning_rate, self.loss, self.optimizer_type, 0.1)
             inner_loop_model.personalise(context_clips, context_labels, learning_args, ops_counter=self.ops_counter)
             # add task's ops to self.ops_counter
             self.ops_counter.task_complete()
