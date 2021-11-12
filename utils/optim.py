@@ -93,10 +93,8 @@ def init_optimizer(model, lr, optimizer_type='adam', extractor_scale_factor=1.0,
             params_list.append({'params': additional_params })
 
         optimizer = optimizer_fn(params_list, lr=lr)
-        print('optimizer created')
 
     optimizer.zero_grad()
-    print('optimizer grad zero')
     return optimizer
 
 def init_inner_lr_optimizer(inner_lr, outer_lr, optimizer_type='adam'):
