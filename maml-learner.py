@@ -180,7 +180,9 @@ class Learner:
        
             self.zero_grads(self.model)
             extractor_scale_factor=0.1 if self.args.pretrained_extractor_path else 1.0
-            self.optimizer = init_optimizer(self.model, self.args.learning_rate, extractor_scale_factor=extractor_scale_factor, additional_params=self.inner_lrs_dict)
+            self.optimizer = init_optimizer(self.model, self.args.learning_rate,
+                                extractor_scale_factor=extractor_scale_factor,
+                                additional_params=list(self.inner_lrs_dict.values()))
 
             for epoch in range(self.args.epochs):
                 losses = []

@@ -26,7 +26,7 @@ class LSLR_SGD():
 
             d_p = torch.clone(param.grad).detach()
             lr = self.lrs[key][step_num]
-            alpha = lr if self.maximize else -lr
+            alpha = (lr if self.maximize else -lr) * scale_factor
             param.add_(d_p, alpha=alpha)
 
     def zero_grad(self, set_to_none: bool = False):
@@ -93,8 +93,10 @@ def init_optimizer(model, lr, optimizer_type='adam', extractor_scale_factor=1.0,
             params_list.append({'params': additional_params })
 
         optimizer = optimizer_fn(params_list, lr=lr)
+        print('optimizer created')
 
     optimizer.zero_grad()
+    print('optimizer grad zero')
     return optimizer
 
 def init_inner_lr_optimizer(inner_lr, outer_lr, optimizer_type='adam'):
