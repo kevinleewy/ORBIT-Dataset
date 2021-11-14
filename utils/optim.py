@@ -32,7 +32,7 @@ class LSLR_SGD():
             alpha = (lr if self.maximize else -lr) * scale_factor
 
             with torch.no_grad():
-                param.add_(d_p, alpha=alpha)
+                param.add_(d_p, alpha=alpha.detach())
 
             # with torch.enable_grad():
             lslr_loss = (param + d_p * alpha).sum()
