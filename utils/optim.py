@@ -35,12 +35,13 @@ class LSLR_SGD():
             param.add_(d_p, alpha=alpha)
 
             with torch.enable_grad():
-                update = param + d_p * alpha
-                updates_dict[key] = update
+                lslr_loss = (param + d_p * alpha).sum()
+                updates_dict[key] = lslr_loss
 
-                print('before optim backward:', key, step_num, lr.grad)
-                update.backward()
-                print('after optim backward:', key, step_num, lr.grad)
+                print('lslr_loss', lslr_loss.size(), lslr_loss)
+                print('before optim backward:', key, step_num, lr, lr.grad)
+                lslr_loss.backward()
+                print('after optim backward:', key, step_num, lr, lr.grad)
 
         return updates_dict
 
