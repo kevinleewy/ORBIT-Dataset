@@ -38,7 +38,7 @@ class LSLR_SGD():
             lslr_loss = (param + d_p * alpha).sum()
             updates_dict[key] = lslr_loss
 
-            print('before optim backward:', key, step_num, lr, self.lrs[key].grad)
+            print('before optim backward:', key, step_num, self.lrs[key], self.lrs[key].grad)
             lslr_loss.backward()
             print('after optim backward:', key, step_num, lr, self.lrs[key].grad)
 
