@@ -200,7 +200,11 @@ class Learner:
                     losses.append(task_loss.detach())
 
                     if ((step + 1) % self.args.tasks_per_batch == 0) or (step == (total_steps - 1)):
+                        for k, v in self.inner_lrs_dict.items():
+                            print('after step:', k, v.grad)
                         self.optimizer.step()
+                        for k, v in self.inner_lrs_dict.items():
+                            print('after step:', k, v.grad)
                         self.optimizer.zero_grad()
 
                     if self.args.print_by_step:
@@ -261,8 +265,12 @@ class Learner:
         target_loss = self.loss(target_logits, target_labels) / self.args.tasks_per_batch
         target_loss += 0.001 * inner_loop_model.feature_adapter.regularization_term(switch_device=self.args.use_two_gpus)
 
+        for k, v in self.inner_lrs_dict.items():
+            print('before backwards:', k, v.grad)
         # populate grad buffers
         target_loss.backward()
+        for k, v in self.inner_lrs_dict.items():
+            print('after backwards:', k, v.grad)
         # copy gradients from inner_loop_model to self.model
         self.copy_grads(inner_loop_model, self.model)
 
