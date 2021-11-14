@@ -38,12 +38,9 @@ class LSLR_SGD():
                 update = param + d_p * alpha
                 updates_dict[key] = update
 
-
-                for k, v in self.inner_lrs_dict.items():
-                    print('before optim backward:', k, v.grad)
+                print('before optim backward:', key, step_num, lr.grad)
                 update.backward()
-                for k, v in self.inner_lrs_dict.items():
-                    print('after optim backward:', k, v.grad)
+                print('after optim backward:', key, step_num, lr.grad)
 
         return updates_dict
 
