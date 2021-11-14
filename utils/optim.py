@@ -27,8 +27,9 @@ class LSLR_SGD():
             lr = self.lrs[key][step_num]
             alpha = (lr if self.maximize else -lr) * scale_factor
 
-            param.add_(d_p * alpha, alpha=1)
+            # param.add_(d_p * alpha, alpha=1)
             # param.add_(d_p, alpha=alpha.detach())
+            param = param.add(d_p, alpha=alpha)
 
     def zero_grad(self, set_to_none: bool = False):
         r"""Sets the gradients of all optimized :class:`torch.Tensor` s to zero.
