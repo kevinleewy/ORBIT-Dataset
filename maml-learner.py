@@ -92,7 +92,7 @@ class Learner:
             additional_param_keys = []
 
         for key in list(param_dict.keys()) + additional_param_keys:
-            self.inner_lrs_dict[key] = torch.tensor(self.args.inner_learning_rate,
+            self.inner_lrs_dict[key] = torch.tensor([self.args.inner_learning_rate] * (self.args.num_grad_steps + 1),
                 requires_grad=self.args.use_learnable_learning_rates)
 
 
