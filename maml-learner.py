@@ -84,7 +84,7 @@ class Learner:
 
         self.optimizer_type = 'lslr' if self.args.use_learnable_learning_rates else 'sgd'
         param_dict = self.get_inner_loop_parameter_dict(params=self.model.named_parameters())
-        self.inner_lrs_dict = nn.ParameterDict()
+        self.inner_lrs_dict = {}
 
         if self.args.classifier == 'linear':
             additional_param_keys = ['classifier.linear.weight', 'classifier.linear.bias']
@@ -92,8 +92,7 @@ class Learner:
             additional_param_keys = []
 
         for key in list(param_dict.keys()) + additional_param_keys:
-            self.inner_lrs_dict[key.replace('.','-')] = nn.Parameter(
-                data=torch.ones(self.args.num_grad_steps + 1) * self.args.inner_learning_rate,
+            self.inner_lrs_dict[key] = torch.tensor(self.args.inner_learning_rate,
                 requires_grad=self.args.use_learnable_learning_rates)
 
 

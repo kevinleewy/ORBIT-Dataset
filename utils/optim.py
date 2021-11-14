@@ -38,7 +38,6 @@ class LSLR_SGD():
             lslr_loss = (param + d_p * alpha).sum()
             updates_dict[key] = lslr_loss
 
-            print('lslr_loss', lslr_loss.size(), lslr_loss)
             print('before optim backward:', key, step_num, lr, lr.grad)
             lslr_loss.backward()
             print('after optim backward:', key, step_num, lr, lr.grad)
@@ -89,9 +88,9 @@ def init_optimizer(model, lr, optimizer_type='adam', extractor_scale_factor=1.0,
         params = {}
         for k, v in model.named_parameters():
             if k.startswith('feature_extractor'):
-                params[k.replace('.','-')] = (v, extractor_scale_factor)
+                params[k] = (v, extractor_scale_factor)
             else:
-                params[k.replace('.','-')] = (v, 1.0)
+                params[k] = (v, 1.0)
         
         optimizer = optimizer_fn(params=params, lrs=lr)
     
