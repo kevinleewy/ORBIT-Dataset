@@ -201,11 +201,13 @@ class Learner:
 
                     if ((step + 1) % self.args.tasks_per_batch == 0) or (step == (total_steps - 1)):
                         for k, v in self.inner_lrs_dict.items():
-                            print('after step:', k, v.grad)
+                            print('before step:', k, v.grad)
                         self.optimizer.step()
                         for k, v in self.inner_lrs_dict.items():
                             print('after step:', k, v.grad)
                         self.optimizer.zero_grad()
+                        for k, v in self.inner_lrs_dict.items():
+                            print('after zero_grad:', k, v.grad)
 
                     if self.args.print_by_step:
                         current_stats_str = stats_to_str(self.train_evaluator.get_current_stats())

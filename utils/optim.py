@@ -21,15 +21,29 @@ class LSLR_SGD():
             closure (callable, optional): A closure that reevaluates the model
                 and returns the loss.
         """
+
+        updates_dict = {}
+
         for key, (param, scale_factor) in self.params.items():
 
             d_p = torch.clone(param.grad).detach()
             lr = self.lrs[key][step_num]
             alpha = (lr if self.maximize else -lr) * scale_factor
 
-            # param.add_(d_p * alpha, alpha=1)
-            # param.add_(d_p, alpha=alpha.detach())
-            param = param.add(d_p, alpha=alpha)
+            with torch.no_grad():
+                param.add_(d_p, alpha=alpha)
+
+            update = param + d_p * alpha
+            updates_dict[key] = update
+
+
+            for k, v in self.inner_lrs_dict.items():
+                print('before optim backward:', k, v.grad)
+            update.backward()
+            for k, v in self.inner_lrs_dict.items():
+                print('after optim backward:', k, v.grad)
+
+        return updates_dict
 
     def zero_grad(self, set_to_none: bool = False):
         r"""Sets the gradients of all optimized :class:`torch.Tensor` s to zero.
