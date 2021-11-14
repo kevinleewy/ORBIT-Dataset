@@ -14,6 +14,7 @@ class LSLR_SGD():
         self.lrs = lrs
         self.maximize = maximize
 
+    @torch.no_grad()
     def step(self, step_num):
         """Performs a single optimization step.
 
@@ -30,18 +31,19 @@ class LSLR_SGD():
             lr = self.lrs[key][step_num]
             alpha = (lr if self.maximize else -lr) * scale_factor
 
-            with torch.no_grad():
-                param.add_(d_p, alpha=alpha)
+            # with torch.no_grad():
+            param.add_(d_p, alpha=alpha)
 
-            update = param + d_p * alpha
-            updates_dict[key] = update
+            with torch.grad_enabled():
+                update = param + d_p * alpha
+                updates_dict[key] = update
 
 
-            for k, v in self.inner_lrs_dict.items():
-                print('before optim backward:', k, v.grad)
-            update.backward()
-            for k, v in self.inner_lrs_dict.items():
-                print('after optim backward:', k, v.grad)
+                for k, v in self.inner_lrs_dict.items():
+                    print('before optim backward:', k, v.grad)
+                update.backward()
+                for k, v in self.inner_lrs_dict.items():
+                    print('after optim backward:', k, v.grad)
 
         return updates_dict
 
