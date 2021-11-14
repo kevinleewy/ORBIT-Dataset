@@ -14,7 +14,6 @@ class LSLR_SGD():
         self.lrs = lrs
         self.maximize = maximize
 
-    @torch.no_grad()
     def step(self, step_num):
         """Performs a single optimization step.
 
