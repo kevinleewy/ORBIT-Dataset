@@ -34,7 +34,7 @@ class LSLR_SGD():
             # with torch.no_grad():
             param.add_(d_p, alpha=alpha)
 
-            with torch.grad_enabled():
+            with torch.enable_grad():
                 update = param + d_p * alpha
                 updates_dict[key] = update
 
