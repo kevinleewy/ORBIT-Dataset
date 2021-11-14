@@ -362,7 +362,8 @@ class Learner:
         if 'inner_lrs_dict' in checkpoint and 'model_state_dict' in checkpoint:
             self.inner_lrs_dict = checkpoint['inner_lrs_dict']
             self.model.load_state_dict(checkpoint['model_state_dict'], strict=False)
-            print(self.inner_lrs_dict)
+            for k, v in self.inner_lrs_dict.items():
+                print(k, v)
         else:
             self.model.load_state_dict(checkpoint, strict=False)
         self.ops_counter.set_base_params(self.model)
