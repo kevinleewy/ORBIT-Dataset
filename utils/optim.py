@@ -23,7 +23,7 @@ class LSLR_SGD():
                 and returns the loss.
         """
 
-        updates_dict = {}
+        # updates_dict = {}
 
         for key, (param, scale_factor) in self.params.items():
 
@@ -34,11 +34,11 @@ class LSLR_SGD():
             with torch.no_grad():
                 param.add_(d_p, alpha=alpha.detach())
 
-            lslr_loss = (param + d_p * alpha).sum()
-            updates_dict[key] = lslr_loss
-            lslr_loss.backward()
+        #     lslr_loss = (param + d_p * alpha).sum()
+        #     updates_dict[key] = lslr_loss
+        #     lslr_loss.backward()
 
-        return updates_dict
+        # return updates_dict
 
     def zero_grad(self, set_to_none: bool = False):
         r"""Sets the gradients of all optimized :class:`torch.Tensor` s to zero.

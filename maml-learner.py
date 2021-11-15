@@ -261,7 +261,11 @@ class Learner:
         target_loss += 0.001 * inner_loop_model.feature_adapter.regularization_term(switch_device=self.args.use_two_gpus)
 
         # populate grad buffers
+        for k, v in self.inner_lrs_dict.items():
+            print('before backward', k, v.grad)
         target_loss.backward()
+        for k, v in self.inner_lrs_dict.items():
+            print('after backward', k, v.grad)
 
         # copy gradients from inner_loop_model to self.model
         self.copy_grads(inner_loop_model, self.model)

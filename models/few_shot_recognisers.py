@@ -338,6 +338,9 @@ class MultiStepFewShotRecogniser(FewShotRecogniser):
         inner_loop_optimizer = init_optimizer(self, lr, optimizer_type, extractor_scale_factor)
 
         context_clip_loader = get_clip_loader((context_clips, context_clip_labels), self.args.batch_size, with_labels=True)
+        
+        # if optimizer_type == 'lslr':
+        #     updates_dict_for_all_steps = []
         for i in range(self.args.num_grad_steps):
             for batch_context_clips, batch_context_labels in context_clip_loader:
                 batch_context_clips = batch_context_clips.to(self.device)
@@ -355,6 +358,8 @@ class MultiStepFewShotRecogniser(FewShotRecogniser):
 
             if optimizer_type == 'lslr':
                 inner_loop_optimizer.step(step_num=i)
+                # updates_dict_for_step = inner_loop_optimizer.step(step_num=i)
+                # updates_dict_for_all_steps.append(updates_dict_for_step)
             else:
                 inner_loop_optimizer.step()
             inner_loop_optimizer.zero_grad()
@@ -362,6 +367,7 @@ class MultiStepFewShotRecogniser(FewShotRecogniser):
             if ops_counter:
                 if self.device != torch.device('cpu'): torch.cuda.synchronize()
                 ops_counter.log_time(time.time() - t1)
+
  
     def predict(self, clips, ops_counter=None, context=False):
         """
