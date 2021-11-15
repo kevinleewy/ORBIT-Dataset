@@ -316,7 +316,7 @@ class MultiStepFewShotRecogniser(FewShotRecogniser):
         """
         FewShotRecogniser.__init__(self, args)
 
-    def personalise(self, context_clips, context_clip_labels, learning_args, ops_counter=None):
+    def personalise(self, context_clips, context_clip_labels, learning_args, ops_counter=None, train=False):
         """
         Function that learns a new task by taking a fixed number of gradient steps on the task's context set. For each task, a new linear classification layer is added (and FiLM layers if self.args.adapt_features == True).
         :param context_clips: (np.ndarray or torch.Tensor) Context clips (either as paths or tensors), each composed of self.args.clip_length contiguous frames.
@@ -348,7 +348,11 @@ class MultiStepFewShotRecogniser(FewShotRecogniser):
                                             params=params_dict)
                 t1 = time.time()
                 batch_context_loss = loss_fn(batch_context_logits, batch_context_labels)
-                batch_context_loss.backward()
+                # if optimizer_type == 'lslr':
+                #     gradients = torch.autograd.grad(batch_context_loss, parameters.values(), create_graph=train)
+                # else:
+                #     batch_context_loss.backward()
+                batch_context_loss.backward(retain_graph=optimizer_type == 'lslr')
 
                 if ops_counter:
                     if self.device != torch.device('cpu'): torch.cuda.synchronize()
