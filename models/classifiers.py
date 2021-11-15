@@ -33,7 +33,19 @@ import torch.nn as nn
 import torch.nn.functional as F
 from collections import OrderedDict
 
+from models.common import extract_top_level_dict
 from models.mlps import DenseResidualBlock
+
+class Linear(nn.Linear):
+    def forward(self, input, params=None):
+
+        if params is not None:
+            params = extract_top_level_dict(current_dict=params)
+            (weight, bias) = params["weight"], params["bias"]
+        else:
+            weight, bias = self.weight, self.bias
+
+        return F.linear(input, weight, bias)
 
 class LinearClassifier(nn.Module):
     """
@@ -56,7 +68,7 @@ class LinearClassifier(nn.Module):
         :init_zeros: (bool) If True, initialise classification layer with zeros, otherwise use Kaiming uniform.
         :return: Nothing.
         """
-        self.linear = nn.Linear(self.in_size, out_size)
+        self.linear = Linear(self.in_size, out_size)
         if init_zeros:
             nn.init.zeros_(self.linear.weight)
             nn.init.zeros_(self.linear.bias)
@@ -66,14 +78,23 @@ class LinearClassifier(nn.Module):
         self.linear.to(device)
         self.device = device
   
-    def predict(self, features, ops_counter=None):
+    def predict(self, features, ops_counter=None, params=None):
         """
         Function that passes a batch of target features through linear classification layer to get logits over object classes for each feature.
         :param features: (torch.Tensor) Batch of features.
         :return: (torch.Tensor) Logits over object classes for each feature.
         """
+
+        linear_params = None
+        
+        if params is not None:
+            params = extract_top_level_dict(current_dict=params)
+
+            if 'linear' in params:
+                linear_params = params['linear']
+
         t1 = time.time()
-        out = self.linear(features)
+        out = self.linear(features, linear_params)
         if ops_counter:
             if self.device != torch.device('cpu'): torch.cuda.synchronize()
             ops_counter.log_time(time.time() - t1)

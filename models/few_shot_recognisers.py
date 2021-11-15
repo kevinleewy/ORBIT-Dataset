@@ -36,6 +36,7 @@ import torch.nn.functional as F
 
 from features import extractors
 from feature_adapters import FilmAdapter, NullAdapter
+from models.common import extract_top_level_dict
 from models.poolers import MeanPooler
 from models.normalisation_layers import TaskNorm
 from models.set_encoder import SetEncoder, NullSetEncoder
@@ -153,28 +154,25 @@ class FewShotRecogniser(nn.Module):
         :return: (torch.Tensor) Adapted frame features flattened across all clips.
         """ 
         features = []
-        # print('_get_features_in_batches:_set_model_state')
+
         self._set_model_state(context)
-        # print('_get_features_in_batches:_set_model_state-done')
+
         for batch_clips in clip_loader:
-            # print('_get_features_in_batches:loop')
+
             batch_clips = batch_clips.to(self.device, non_blocking=True)
             t1 = time.time()
             if self.args.use_two_gpus:
-                # print('_get_features_in_batches:use_two_gpus')
+
                 batch_clips = batch_clips.cuda(1)
-                # print('_get_features_in_batches:feature_extractor')
+
                 batch_features = self.feature_extractor(batch_clips, feature_adapter_params).cuda(0)
-                # print('_get_features_in_batches:feature_extractor-done')
+
             else:
-                # print('_get_features_in_batches:feature_extractor')
+
                 batch_features = self.feature_extractor(batch_clips, feature_adapter_params)
-                # print('_get_features_in_batches:feature_extractor-done')
 
             if ops_counter:
-                # print('cuda nani?')
                 if self.device != torch.device('cpu'): torch.cuda.synchronize()
-                # print('cuda nani!')
                 ops_counter.log_time(time.time() - t1)
                 ops_counter.compute_macs(self.feature_extractor, batch_clips, feature_adapter_params)
             
@@ -193,9 +191,7 @@ class FewShotRecogniser(nn.Module):
         feature_adapter_params = self.feature_adapter(task_embedding)
 
         if ops_counter:
-            # print('cuda nani?')
             if self.device != torch.device('cpu'): torch.cuda.synchronize()
-            # print('cuda nani!')
             ops_counter.log_time(time.time() - t1)
             ops_counter.compute_macs(self.feature_adapter, task_embedding)
         
@@ -339,13 +335,17 @@ class MultiStepFewShotRecogniser(FewShotRecogniser):
 
         context_clip_loader = get_clip_loader((context_clips, context_clip_labels), self.args.batch_size, with_labels=True)
         
-        # if optimizer_type == 'lslr':
-        #     updates_dict_for_all_steps = []
+        params_dict = None
+
         for i in range(self.args.num_grad_steps):
             for batch_context_clips, batch_context_labels in context_clip_loader:
                 batch_context_clips = batch_context_clips.to(self.device)
                 batch_context_labels = batch_context_labels.to(self.device)
-                batch_context_logits = self.predict_a_batch(batch_context_clips, ops_counter=ops_counter, context=True)
+                batch_context_logits = self.predict_a_batch(
+                                            batch_context_clips,
+                                            ops_counter=ops_counter,
+                                            context=True,
+                                            params=params_dict)
                 t1 = time.time()
                 batch_context_loss = loss_fn(batch_context_logits, batch_context_labels)
                 batch_context_loss.backward()
@@ -357,12 +357,10 @@ class MultiStepFewShotRecogniser(FewShotRecogniser):
             t1 = time.time()
 
             if optimizer_type == 'lslr':
-                inner_loop_optimizer.step(step_num=i)
-                # updates_dict_for_step = inner_loop_optimizer.step(step_num=i)
-                # updates_dict_for_all_steps.append(updates_dict_for_step)
+                params_dict = inner_loop_optimizer.step(step_num=i)
             else:
                 inner_loop_optimizer.step()
-            inner_loop_optimizer.zero_grad()
+                inner_loop_optimizer.zero_grad()
 
             if ops_counter:
                 if self.device != torch.device('cpu'): torch.cuda.synchronize()
@@ -379,16 +377,16 @@ class MultiStepFewShotRecogniser(FewShotRecogniser):
         """
         clip_loader = get_clip_loader(clips, self.args.batch_size)
         task_embedding = None # multi-step methods do not use set encoder
-        # print('MultiStepFewShotRecogniser._get_feature_adapter_params:')
+
         self.feature_adapter_params = self._get_feature_adapter_params(task_embedding, ops_counter)
-        # print('MultiStepFewShotRecogniser._get_features_in_batches:')
+
         features = self._get_features_in_batches(clip_loader, self.feature_adapter_params, ops_counter, context=context)
-        # print('MultiStepFewShotRecogniser._pool_features:')
+
         features = self._pool_features(features, ops_counter)
-        # print('MultiStepFewShotRecogniser.classifier.predict:')
+
         return self.classifier.predict(features, ops_counter)
     
-    def predict_a_batch(self, clips, ops_counter=None, context=False):
+    def predict_a_batch(self, clips, ops_counter=None, context=False, params=None):
         """
         Function that processes a batch of clips to get logits over object classes for each clip.
         :param clips: (torch.Tensor) Tensor of clips, each composed of self.args.clip_length contiguous frames.
@@ -396,11 +394,28 @@ class MultiStepFewShotRecogniser(FewShotRecogniser):
         :param context: (bool) True if a context set is being processed, otherwise False.
         :return: (torch.Tensor) Logits over object classes for each clip in clips.
         """
-        task_embedding = None # multi-step methods do not use set encoder
-        self.feature_adapter_params = self._get_feature_adapter_params(task_embedding, ops_counter)
-        features = self._get_features(clips, self.feature_adapter_params, ops_counter, context=context)
+        
+        feature_extractor_params = None
+        classifier_params = None
+        
+        if params is not None:
+            
+            params = extract_top_level_dict(current_dict=params)
+
+            if 'feature_extractor' in params:
+                feature_extractor_params = params['feature_extractor']
+            if 'classifier' in params:
+                classifier_params = params['classifier']
+        
+        elif self.args.adapt_features:
+            task_embedding = None # multi-step methods do not use set encoder
+            self.feature_adapter_params = self._get_feature_adapter_params(task_embedding, ops_counter)
+            feature_extractor_params = self.feature_adapter_params
+
+        features = self._get_features(clips, feature_extractor_params, ops_counter, context=context)
         features = self._pool_features(features, ops_counter)
-        return self.classifier.predict(features, ops_counter)
+        
+        return self.classifier.predict(features, ops_counter, classifier_params)
     
     def personalise_with_lite(self, context_clips, context_labels):
         NotImplementedError

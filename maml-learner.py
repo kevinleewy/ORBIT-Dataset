@@ -40,7 +40,7 @@ from data.dataloaders import DataLoader
 from models import MultiStepFewShotRecogniser
 from utils.args import parse_args
 from utils.ops_counter import OpsCounter
-from utils.optim import cross_entropy, init_optimizer, init_inner_lr_optimizer
+from utils.optim import cross_entropy, init_optimizer
 from utils.data import get_clip_loader, unpack_task, attach_frame_history
 from utils.logging import print_and_log, get_log_files, stats_to_str
 from utils.eval_metrics import TrainEvaluator, ValidationEvaluator, TestEvaluator
@@ -261,11 +261,7 @@ class Learner:
         target_loss += 0.001 * inner_loop_model.feature_adapter.regularization_term(switch_device=self.args.use_two_gpus)
 
         # populate grad buffers
-        for k, v in self.inner_lrs_dict.items():
-            print('before backward', k, v.grad)
         target_loss.backward()
-        for k, v in self.inner_lrs_dict.items():
-            print('after backward', k, v.grad)
 
         # copy gradients from inner_loop_model to self.model
         self.copy_grads(inner_loop_model, self.model)

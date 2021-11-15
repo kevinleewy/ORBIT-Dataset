@@ -17,13 +17,9 @@ class LSLR_SGD():
     # @torch.no_grad()
     def step(self, step_num):
         """Performs a single optimization step.
-
-        Args:
-            closure (callable, optional): A closure that reevaluates the model
-                and returns the loss.
         """
 
-        # updates_dict = {}
+        updated_param_dict = {}
 
         for key, (param, scale_factor) in self.params.items():
 
@@ -31,14 +27,12 @@ class LSLR_SGD():
             lr = self.lrs[key][step_num]
             alpha = (lr if self.maximize else -lr) * scale_factor
 
-            with torch.no_grad():
-                param.add_(d_p, alpha=alpha.detach())
+            # with torch.no_grad():
+            #     param.add_(d_p, alpha=alpha.detach())
 
-        #     lslr_loss = (param + d_p * alpha).sum()
-        #     updates_dict[key] = lslr_loss
-        #     lslr_loss.backward()
+            updated_param_dict[key] = param + d_p * alpha
 
-        # return updates_dict
+        return updated_param_dict
 
     def zero_grad(self, set_to_none: bool = False):
         r"""Sets the gradients of all optimized :class:`torch.Tensor` s to zero.
@@ -107,12 +101,4 @@ def init_optimizer(model, lr, optimizer_type='adam', extractor_scale_factor=1.0,
 
     optimizer.zero_grad()
     return optimizer
-
-def init_inner_lr_optimizer(inner_lr, outer_lr, optimizer_type='adam'):
-    
-    optimizer_fn = optimizers[optimizer_type]
-    optimizer = optimizer_fn(inner_lr, lr=outer_lr)
-    optimizer.zero_grad()
-    return optimizer
-
 

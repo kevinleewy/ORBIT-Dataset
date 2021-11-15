@@ -30,17 +30,47 @@ SOFTWARE.
 
 import torch
 import torch.nn as nn
-from models.normalisation_layers import TaskNorm, get_normalisation_layer
+from models.common import extract_top_level_dict
+from models.normalisation_layers import BatchNorm2d, TaskNorm, get_normalisation_layer
 from feature_adapters.resnet_adaptation_layers import FilmLayer, FilmLayerGenerator
+
+class Conv2d(nn.Conv2d):
+    def forward(self, input, params=None):
+
+        weight, bias = self.weight, self.bias
+        
+        if params is not None:
+            params = extract_top_level_dict(current_dict=params)
+            if 'weight' in params:
+                weight = params["weight"]
+            if 'bias' in params:
+                bias = params["bias"]
+
+        return self._conv_forward(input, weight, bias)
 
 def conv3x3(in_planes, out_planes, stride=1):
     """3x3 convolution with padding"""
-    return nn.Conv2d(in_planes, out_planes, kernel_size=3, stride=stride,
+    return Conv2d(in_planes, out_planes, kernel_size=3, stride=stride,
                      padding=1, bias=False)
 
 def conv1x1(in_planes, out_planes, stride=1):
     """1x1 convolution"""
-    return nn.Conv2d(in_planes, out_planes, kernel_size=1, stride=stride, bias=False)
+    return Conv2d(in_planes, out_planes, kernel_size=1, stride=stride, bias=False)
+
+class TwoInputSequential(nn.Sequential):
+    def forward(self, input, params=None):
+
+        if params is not None:
+            params = extract_top_level_dict(current_dict=params)
+
+        for i, module in enumerate(self):
+
+            param_i = None
+            if params and str(i) in params:
+                param_i = params[str(i)]
+
+            input = module(input, param_i)
+        return input
 
 class BasicBlock(nn.Module):
     expansion = 1
@@ -55,18 +85,39 @@ class BasicBlock(nn.Module):
         self.downsample = downsample
         self.stride = stride
 
-    def forward(self, x):
+    def forward(self, x, params=None):
+
+        conv1_params = None
+        bn1_params = None
+        conv2_params = None
+        bn2_params = None
+        downsample_params = None
+
+        if params is not None:
+            params = extract_top_level_dict(current_dict=params)
+
+            if 'conv1' in params:
+                conv1_params = params['conv1']
+            if 'bn1' in params:
+                bn1_params = params['bn1']
+            if 'conv2' in params:
+                conv2_params = params['conv2']
+            if 'bn2' in params:
+                bn2_params = params['bn2']
+            if 'downsample' in params:
+                downsample_params = params['downsample']
+
         identity = x
 
-        out = self.conv1(x)
-        out = self.bn1(out)
+        out = self.conv1(x, conv1_params)
+        out = self.bn1(out, bn1_params)
         out = self.relu(out)
 
-        out = self.conv2(out)
-        out = self.bn2(out)
+        out = self.conv2(out, conv2_params)
+        out = self.bn2(out, bn2_params)
 
         if self.downsample is not None:
-            identity = self.downsample(x)
+            identity = self.downsample(x, downsample_params)
 
         out += identity
         out = self.relu(out)
@@ -133,7 +184,7 @@ class ResNet(nn.Module):
         super(ResNet, self).__init__()
         self.initial_pool = initial_pool # False for 84x84
         self.inplanes = self.curr_planes = 64
-        self.conv1 = nn.Conv2d(3, self.curr_planes, kernel_size=conv1_kernel_size, stride=2, padding=1, bias=False)
+        self.conv1 = Conv2d(3, self.curr_planes, kernel_size=conv1_kernel_size, stride=2, padding=1, bias=False)
         self.bn1 = bn_fn(self.curr_planes)
         self.relu = nn.ReLU(inplace=True)
         self.maxpool = nn.MaxPool2d(kernel_size=3, stride=2, padding=1)
@@ -144,16 +195,16 @@ class ResNet(nn.Module):
         self.avgpool = nn.AdaptiveAvgPool2d((1, 1))
 
         for m in self.modules():
-            if isinstance(m, nn.Conv2d):
+            if isinstance(m, Conv2d):
                 nn.init.kaiming_normal_(m.weight, mode='fan_out', nonlinearity='relu')
-            elif isinstance(m, nn.BatchNorm2d) or isinstance(m, TaskNorm):
+            elif isinstance(m, BatchNorm2d) or isinstance(m, TaskNorm):
                 nn.init.constant_(m.weight, 1)
                 nn.init.constant_(m.bias, 0)
 
     def _make_layer(self, block, planes, blocks, bn_fn, stride=1):
         downsample = None
         if stride != 1 or self.curr_planes != planes * block.expansion:
-            downsample = nn.Sequential(
+            downsample = TwoInputSequential(
                 conv1x1(self.curr_planes, planes * block.expansion, stride),
                 bn_fn(planes * block.expansion),
             )
@@ -164,24 +215,49 @@ class ResNet(nn.Module):
         for _ in range(1, blocks):
             layers.append(block(self.curr_planes, planes, bn_fn))
 
-        return nn.Sequential(*layers)
+        return TwoInputSequential(*layers)
 
     def _flatten(self, x):
         sz = x.size()
         return x.view(-1, sz[-3], sz[-2], sz[-1]) if x.dim() >=5 else x
 
-    def forward(self, x, param_dict=None):
+    def forward(self, x, params=None):
+
+        conv1_params = None
+        bn1_params = None
+        layer1_params = None
+        layer2_params = None
+        layer3_params = None
+        layer4_params = None
+        
+        if params is not None:
+            
+            params = extract_top_level_dict(current_dict=params)
+
+            if 'conv1' in params:
+                conv1_params = params['conv1']
+            if 'bn1' in params:
+                bn1_params = params['bn1']
+            if 'layer1' in params:
+                layer1_params = params['layer1']
+            if 'layer2' in params:
+                layer2_params = params['layer2']
+            if 'layer3' in params:
+                layer3_params = params['layer3']
+            if 'layer4' in params:
+                layer4_params = params['layer4']
+
         x = self._flatten(x)
-        x = self.conv1(x)
-        x = self.bn1(x)
+        x = self.conv1(x, conv1_params)
+        x = self.bn1(x, bn1_params)
         x = self.relu(x)
         if self.initial_pool:
             x = self.maxpool(x)
 
-        x = self.layer1(x)
-        x = self.layer2(x)
-        x = self.layer3(x)
-        x = self.layer4(x)
+        x = self.layer1(x, layer1_params)
+        x = self.layer2(x, layer2_params)
+        x = self.layer3(x, layer3_params)
+        x = self.layer4(x, layer4_params)
 
         x = self.avgpool(x)
         x = x.view(x.size(0), -1)
