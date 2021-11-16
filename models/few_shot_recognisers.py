@@ -370,8 +370,10 @@ class MultiStepFewShotRecogniser(FewShotRecogniser):
                 if self.device != torch.device('cpu'): torch.cuda.synchronize()
                 ops_counter.log_time(time.time() - t1)
 
+        return params_dict
+
  
-    def predict(self, clips, ops_counter=None, context=False):
+    def predict(self, clips, ops_counter=None, context=False, params=None):
         """
         Function that processes target clips in batches to get logits over object classes for each clip.
         :param clips: (np.ndarray or torch.Tensor) Clips (either as paths or tensors), each composed of self.args.clip_length contiguous frames.
@@ -379,16 +381,30 @@ class MultiStepFewShotRecogniser(FewShotRecogniser):
         :param context: (bool) True if a context set is being processed, otherwise False.
         :return: (torch.Tensor) Logits over object classes for each clip in clips.
         """
+
         clip_loader = get_clip_loader(clips, self.args.batch_size)
-        task_embedding = None # multi-step methods do not use set encoder
+        
+        feature_extractor_params = None
+        classifier_params = None
+        
+        if params is not None:
+            
+            params = extract_top_level_dict(current_dict=params)
 
-        self.feature_adapter_params = self._get_feature_adapter_params(task_embedding, ops_counter)
+            if 'feature_extractor' in params:
+                feature_extractor_params = params['feature_extractor']
+            if 'classifier' in params:
+                classifier_params = params['classifier']
+        else:
+            task_embedding = None # multi-step methods do not use set encoder
+            self.feature_adapter_params = self._get_feature_adapter_params(task_embedding, ops_counter)
+            feature_extractor_params = self.feature_adapter_params
 
-        features = self._get_features_in_batches(clip_loader, self.feature_adapter_params, ops_counter, context=context)
+        features = self._get_features_in_batches(clip_loader, feature_extractor_params, ops_counter, context=context)
 
         features = self._pool_features(features, ops_counter)
 
-        return self.classifier.predict(features, ops_counter)
+        return self.classifier.predict(features, ops_counter, classifier_params)
     
     def predict_a_batch(self, clips, ops_counter=None, context=False, params=None):
         """

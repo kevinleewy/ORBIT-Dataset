@@ -6,12 +6,13 @@ import torch.nn.functional as F
 
 class LSLR_SGD():
     
-    def __init__(self, params, lrs, maximize: bool = False):
+    def __init__(self, params, lrs, num_steps, maximize: bool = False):
         
         assert params.keys() == lrs.keys(), 'params and lrs must have identical set of keys'
 
         self.params = params
         self.lrs = lrs
+        self.num_steps = num_steps
         self.maximize = maximize
 
     # @torch.no_grad()
@@ -19,6 +20,8 @@ class LSLR_SGD():
         """Performs a single optimization step.
         """
 
+        assert step_num <= self.num_steps, f'step_num cannot be greater than {self.num_steps}'
+        
         updated_param_dict = {}
 
         for key, (param, scale_factor) in self.params.items():
@@ -82,7 +85,7 @@ def init_optimizer(model, lr, optimizer_type='adam', extractor_scale_factor=1.0,
             else:
                 params[k] = (v, 1.0)
         
-        optimizer = optimizer_fn(params=params, lrs=lr)
+        optimizer = optimizer_fn(params=params, lrs=lr, num_steps=model.args.num_grad_steps)
     
     else:
     

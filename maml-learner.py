@@ -280,7 +280,7 @@ class Learner:
             learning_args=(self.inner_lrs_dict, self.loss, self.optimizer_type, 0.1)
         else:
             learning_args=(self.args.inner_learning_rate, self.loss, self.optimizer_type, 0.1)
-        inner_loop_model.personalise(context_clips, context_labels, learning_args)
+        params = inner_loop_model.personalise(context_clips, context_labels, learning_args)
 
         # forward target set through inner_loop_model in batches
         task_loss = 0
@@ -289,7 +289,7 @@ class Learner:
         for batch_target_clips, batch_target_labels in target_clip_loader:
             batch_target_clips = batch_target_clips.to(self.device)
             batch_target_labels = batch_target_labels.to(self.device)
-            batch_target_logits = inner_loop_model.predict_a_batch(batch_target_clips)
+            batch_target_logits = inner_loop_model.predict_a_batch(batch_target_clips, params=params)
             target_logits.extend(batch_target_logits.detach())
            
             # compute loss on target batch
@@ -301,8 +301,14 @@ class Learner:
             batch_loss.backward()
             task_loss += batch_loss.detach()
 
-        # copy gradients from inner_loop_model to self.model
-        self.copy_grads(inner_loop_model, self.model)
+        if self.optimizer_type == 'lslr':
+            for k, v in self.model.named_parameters():
+                if v.requires_grad:
+                    v.grad += params[k].grad.detach()
+                    v.grad.clamp_(-10, 10)
+        else:
+            # copy gradients from inner_loop_model to self.model
+            self.copy_grads(inner_loop_model, self.model)
 
         # update evaluator with task accuracy
         target_logits = torch.stack(target_logits)
@@ -327,12 +333,12 @@ class Learner:
                 learning_args=(self.inner_lrs_dict, self.loss, self.optimizer_type, 0.1)
             else:
                 learning_args=(self.args.inner_learning_rate, self.loss, self.optimizer_type, 0.1)
-            inner_loop_model.personalise(context_clips, context_labels, learning_args)
+            params = inner_loop_model.personalise(context_clips, context_labels, learning_args)
 
             with torch.no_grad():
                 for target_video, target_labels in zip(cached_target_clips_by_video, cached_target_labels_by_video):  # loop through videos
                     target_video_clips, target_video_labels = attach_frame_history(target_video, target_labels, self.args.clip_length)
-                    target_video_logits = inner_loop_model.predict(target_video_clips)
+                    target_video_logits = inner_loop_model.predict(target_video_clips, params=params)
                     self.validation_evaluator.append(target_video_logits, target_video_labels)
             
                 if (step+1) % self.args.test_tasks_per_user == 0:
@@ -384,7 +390,7 @@ class Learner:
                 learning_args=(self.inner_lrs_dict, self.loss, self.optimizer_type, 0.1)
             else:
                 learning_args=(self.args.inner_learning_rate, self.loss, self.optimizer_type, 0.1)
-            inner_loop_model.personalise(context_clips, context_labels, learning_args, ops_counter=self.ops_counter)
+            params = inner_loop_model.personalise(context_clips, context_labels, learning_args, ops_counter=self.ops_counter)
             # add task's ops to self.ops_counter
             self.ops_counter.task_complete()
 
@@ -392,7 +398,7 @@ class Learner:
             with torch.no_grad():
                 for target_video, target_labels in zip(cached_target_clips_by_video, cached_target_labels_by_video):
                     target_video_clips, target_video_labels = attach_frame_history(target_video, target_labels, self.args.clip_length)
-                    target_video_logits = inner_loop_model.predict(target_video_clips)
+                    target_video_logits = inner_loop_model.predict(target_video_clips, params=params)
                     self.test_evaluator.append(target_video_logits, target_video_labels)
            
                 # if user's last task
