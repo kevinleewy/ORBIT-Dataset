@@ -250,10 +250,10 @@ class Learner:
             learning_args=(self.inner_lrs_dict, self.loss, self.optimizer_type, 0.1)
         else:
             learning_args=(self.args.inner_learning_rate, self.loss, self.optimizer_type, 0.1)
-        inner_loop_model.personalise(context_clips, context_labels, learning_args)
+        params = inner_loop_model.personalise(context_clips, context_labels, learning_args)
 
         # forward target set through inner_loop_model
-        target_logits = inner_loop_model.predict(target_clips)
+        target_logits = inner_loop_model.predict(target_clips, params=params)
         self.train_evaluator.update_stats(target_logits, target_labels)
 
         # compute loss on target set
@@ -368,8 +368,6 @@ class Learner:
         if 'inner_lrs_dict' in checkpoint and 'model_state_dict' in checkpoint:
             self.inner_lrs_dict = checkpoint['inner_lrs_dict']
             self.model.load_state_dict(checkpoint['model_state_dict'], strict=False)
-            for k, v in self.inner_lrs_dict.items():
-                print(k, v)
         else:
             self.model.load_state_dict(checkpoint, strict=False)
         self.ops_counter.set_base_params(self.model)
