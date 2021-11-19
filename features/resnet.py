@@ -223,8 +223,6 @@ class ResNet(nn.Module):
 
     def forward(self, x, params=None, step_num=0):
 
-        print(step_num)
-
         conv1_params = None
         bn1_params = None
         layer1_params = None
