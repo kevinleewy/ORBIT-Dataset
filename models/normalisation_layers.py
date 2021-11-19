@@ -35,7 +35,42 @@ import torch.nn.functional as F
 from models.common import extract_top_level_dict
 
 class BatchNorm2d(nn.BatchNorm2d):
-    def forward(self, input, params=None):
+
+    def __init__(
+        self,
+        num_features,
+        eps=1e-5,
+        momentum=0.1,
+        affine=True,
+        track_running_stats=True,
+        device=None,
+        dtype=None,
+        **kwargs
+    ):
+
+        if kwargs and kwargs['use_per_step_bn_statistics'] and kwargs['num_grad_steps']:
+            num_features = (kwargs['num_grad_steps'], num_features)
+
+        super(BatchNorm2d, self).__init__(
+            num_features=num_features,
+            eps=eps,
+            momentum=momentum,
+            affine=affine,
+            track_running_stats=track_running_stats,
+            device=None,
+            dtype=None
+        )
+
+        # print(self.num_features)
+        # print(self.weight.size())
+        # print(self.bias.size())
+
+        if kwargs['use_per_step_bn_statistics']:
+            self.use_per_step_bn_statistics = kwargs['use_per_step_bn_statistics']
+        if kwargs['num_grad_steps']:
+            self.num_grad_steps = kwargs['num_grad_steps']
+
+    def forward(self, input, params=None, step_num=0):
 
         if params is not None:
             params = extract_top_level_dict(current_dict=params)
@@ -76,13 +111,24 @@ class BatchNorm2d(nn.BatchNorm2d):
         passed when the update should occur (i.e. in training mode when they are tracked), or when buffer stats are
         used for normalization (i.e. in eval mode when buffers are not None).
         """
+
+        # Per-Step Batch Normalization Weights and Biases (BNWB):
+        if self.use_per_step_bn_statistics:
+            running_mean = self.running_mean[step_num]
+            running_var = self.running_var[step_num]
+            weight = weight[step_num]
+            bias = bias[step_num]
+        else:
+            running_mean = self.running_mean
+            running_var = self.running_var
+        
         return F.batch_norm(
             input,
             # If buffers are not to be tracked, ensure that they won't be updated
-            self.running_mean
+            running_mean
             if not self.training or self.track_running_stats
             else None,
-            self.running_var if not self.training or self.track_running_stats else None,
+            running_var if not self.training or self.track_running_stats else None,
             weight,
             bias,
             bn_training,
@@ -235,7 +281,7 @@ class TaskNorm(TaskNormBase):
     """
     TaskNorm normalization layer. Just need to override the augment moment function with 'instance'.
     """
-    def __init__(self, num_features):
+    def __init__(self, num_features, **kwargs):
         """
         Initialize
         :param num_features: number of channels in the 2D convolutional layer

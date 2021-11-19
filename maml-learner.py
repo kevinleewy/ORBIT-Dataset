@@ -253,7 +253,7 @@ class Learner:
         params = inner_loop_model.personalise(context_clips, context_labels, learning_args)
 
         # forward target set through inner_loop_model
-        target_logits = inner_loop_model.predict(target_clips, params=params)
+        target_logits = inner_loop_model.predict(target_clips, params=params, step_num=self.args.num_grad_steps-1)
         self.train_evaluator.update_stats(target_logits, target_labels)
 
         # compute loss on target set
@@ -286,10 +286,11 @@ class Learner:
         task_loss = 0
         target_logits = []
         target_clip_loader = get_clip_loader((target_clips, target_labels), self.args.batch_size, with_labels=True)
+        
         for batch_target_clips, batch_target_labels in target_clip_loader:
             batch_target_clips = batch_target_clips.to(self.device)
             batch_target_labels = batch_target_labels.to(self.device)
-            batch_target_logits = inner_loop_model.predict_a_batch(batch_target_clips, params=params)
+            batch_target_logits = inner_loop_model.predict_a_batch(batch_target_clips, params=params, step_num=self.args.num_grad_steps-1)
             target_logits.extend(batch_target_logits.detach())
            
             # compute loss on target batch
@@ -302,6 +303,7 @@ class Learner:
             task_loss += batch_loss.detach()
 
         if self.optimizer_type == 'lslr':
+            # copy gradients from inner_loop_model to self.model
             for k, v in self.model.named_parameters():
                 if v.requires_grad:
                     v.grad += params[k].grad.detach()
@@ -338,7 +340,7 @@ class Learner:
             with torch.no_grad():
                 for target_video, target_labels in zip(cached_target_clips_by_video, cached_target_labels_by_video):  # loop through videos
                     target_video_clips, target_video_labels = attach_frame_history(target_video, target_labels, self.args.clip_length)
-                    target_video_logits = inner_loop_model.predict(target_video_clips, params=params)
+                    target_video_logits = inner_loop_model.predict(target_video_clips, params=params, step_num=self.args.num_grad_steps-1)
                     self.validation_evaluator.append(target_video_logits, target_video_labels)
             
                 if (step+1) % self.args.test_tasks_per_user == 0:
@@ -368,6 +370,8 @@ class Learner:
         if 'inner_lrs_dict' in checkpoint and 'model_state_dict' in checkpoint:
             self.inner_lrs_dict = checkpoint['inner_lrs_dict']
             self.model.load_state_dict(checkpoint['model_state_dict'], strict=False)
+            for k, v in self.inner_lrs_dict.items():
+                print(k, v)
         else:
             self.model.load_state_dict(checkpoint, strict=False)
         self.ops_counter.set_base_params(self.model)
@@ -396,7 +400,7 @@ class Learner:
             with torch.no_grad():
                 for target_video, target_labels in zip(cached_target_clips_by_video, cached_target_labels_by_video):
                     target_video_clips, target_video_labels = attach_frame_history(target_video, target_labels, self.args.clip_length)
-                    target_video_logits = inner_loop_model.predict(target_video_clips, params=params)
+                    target_video_logits = inner_loop_model.predict(target_video_clips, params=params, step_num=self.args.num_grad_steps-1)
                     self.test_evaluator.append(target_video_logits, target_video_labels)
            
                 # if user's last task

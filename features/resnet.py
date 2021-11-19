@@ -35,7 +35,7 @@ from models.normalisation_layers import BatchNorm2d, TaskNorm, get_normalisation
 from feature_adapters.resnet_adaptation_layers import FilmLayer, FilmLayerGenerator
 
 class Conv2d(nn.Conv2d):
-    def forward(self, input, params=None):
+    def forward(self, input, params=None, **kwargs):
 
         weight, bias = self.weight, self.bias
         
@@ -57,8 +57,8 @@ def conv1x1(in_planes, out_planes, stride=1):
     """1x1 convolution"""
     return Conv2d(in_planes, out_planes, kernel_size=1, stride=stride, bias=False)
 
-class TwoInputSequential(nn.Sequential):
-    def forward(self, input, params=None):
+class ThreeInputSequential(nn.Sequential):
+    def forward(self, input, params=None, **kwargs):
 
         if params is not None:
             params = extract_top_level_dict(current_dict=params)
@@ -69,23 +69,23 @@ class TwoInputSequential(nn.Sequential):
             if params and str(i) in params:
                 param_i = params[str(i)]
 
-            input = module(input, param_i)
+            input = module(input, params=param_i, **kwargs)
         return input
 
 class BasicBlock(nn.Module):
     expansion = 1
 
-    def __init__(self, inplanes, planes, bn_fn, stride=1, downsample=None):
+    def __init__(self, inplanes, planes, bn_fn, stride=1, downsample=None, **kwargs):
         super(BasicBlock, self).__init__()
         self.conv1 = conv3x3(inplanes, planes, stride)
-        self.bn1 = bn_fn(planes)
+        self.bn1 = bn_fn(planes, **kwargs)
         self.relu = nn.ReLU(inplace=True)
         self.conv2 = conv3x3(planes, planes)
-        self.bn2 = bn_fn(planes)
+        self.bn2 = bn_fn(planes, **kwargs)
         self.downsample = downsample
         self.stride = stride
 
-    def forward(self, x, params=None):
+    def forward(self, x, params=None, step_num=0):
 
         conv1_params = None
         bn1_params = None
@@ -110,14 +110,14 @@ class BasicBlock(nn.Module):
         identity = x
 
         out = self.conv1(x, conv1_params)
-        out = self.bn1(out, bn1_params)
+        out = self.bn1(out, bn1_params, step_num)
         out = self.relu(out)
 
         out = self.conv2(out, conv2_params)
-        out = self.bn2(out, bn2_params)
+        out = self.bn2(out, bn2_params, step_num)
 
         if self.downsample is not None:
-            identity = self.downsample(x, downsample_params)
+            identity = self.downsample(x, downsample_params, step_num=step_num)
 
         out += identity
         out = self.relu(out)
@@ -134,17 +134,17 @@ class BasicBlockFilm(nn.Module):
     """
     expansion = 1
 
-    def __init__(self, inplanes, planes, bn_fn, stride=1, downsample=None):
+    def __init__(self, inplanes, planes, bn_fn, stride=1, downsample=None, **kwargs):
         super(BasicBlockFilm, self).__init__()
         self.conv1 = conv3x3(inplanes, planes, stride)
-        self.bn1 = bn_fn(planes)
+        self.bn1 = bn_fn(planes, **kwargs)
         self.relu = nn.ReLU(inplace=True)
         self.conv2 = conv3x3(planes, planes)
-        self.bn2 = bn_fn(planes)
+        self.bn2 = bn_fn(planes, **kwargs)
         self.downsample = downsample
         self.stride = stride
 
-    def forward(self, x, gamma, beta):
+    def forward(self, x, gamma, beta, step_num=0):
         """
         Implements a forward pass through the FiLM adapted ResNet block. FiLM parameters for adaptation are passed
         through to the method, one gamma / beta set for each convolutional layer in the block (2 for the blocks we are
@@ -157,12 +157,12 @@ class BasicBlockFilm(nn.Module):
         identity = x
 
         out = self.conv1(x)
-        out = self.bn1(out)
+        out = self.bn1(out, step_num)
         out = self._film(out, gamma[0], beta[0])
         out = self.relu(out)
 
         out = self.conv2(out)
-        out = self.bn2(out)
+        out = self.bn2(out, step_num)
         out = self._film(out, gamma[1], beta[1])
 
         if self.downsample is not None:
@@ -180,18 +180,18 @@ class BasicBlockFilm(nn.Module):
 
 
 class ResNet(nn.Module):
-    def __init__(self, block, layers, bn_fn, initial_pool=True, conv1_kernel_size=7):
+    def __init__(self, block, layers, bn_fn, initial_pool=True, conv1_kernel_size=7, **kwargs):
         super(ResNet, self).__init__()
         self.initial_pool = initial_pool # False for 84x84
         self.inplanes = self.curr_planes = 64
         self.conv1 = Conv2d(3, self.curr_planes, kernel_size=conv1_kernel_size, stride=2, padding=1, bias=False)
-        self.bn1 = bn_fn(self.curr_planes)
+        self.bn1 = bn_fn(self.curr_planes, **kwargs)
         self.relu = nn.ReLU(inplace=True)
         self.maxpool = nn.MaxPool2d(kernel_size=3, stride=2, padding=1)
-        self.layer1 = self._make_layer(block, self.inplanes, layers[0], bn_fn)
-        self.layer2 = self._make_layer(block, self.inplanes * 2, layers[1], bn_fn, stride=2)
-        self.layer3 = self._make_layer(block, self.inplanes * 4, layers[2], bn_fn, stride=2)
-        self.layer4 = self._make_layer(block, self.inplanes * 8, layers[3], bn_fn, stride=2)
+        self.layer1 = self._make_layer(block, self.inplanes, layers[0], bn_fn, **kwargs)
+        self.layer2 = self._make_layer(block, self.inplanes * 2, layers[1], bn_fn, stride=2, **kwargs)
+        self.layer3 = self._make_layer(block, self.inplanes * 4, layers[2], bn_fn, stride=2, **kwargs)
+        self.layer4 = self._make_layer(block, self.inplanes * 8, layers[3], bn_fn, stride=2, **kwargs)
         self.avgpool = nn.AdaptiveAvgPool2d((1, 1))
 
         for m in self.modules():
@@ -201,27 +201,29 @@ class ResNet(nn.Module):
                 nn.init.constant_(m.weight, 1)
                 nn.init.constant_(m.bias, 0)
 
-    def _make_layer(self, block, planes, blocks, bn_fn, stride=1):
+    def _make_layer(self, block, planes, blocks, bn_fn, stride=1, **kwargs):
         downsample = None
         if stride != 1 or self.curr_planes != planes * block.expansion:
-            downsample = TwoInputSequential(
+            downsample = ThreeInputSequential(
                 conv1x1(self.curr_planes, planes * block.expansion, stride),
-                bn_fn(planes * block.expansion),
+                bn_fn(planes * block.expansion, **kwargs),
             )
 
         layers = []
-        layers.append(block(self.curr_planes, planes, bn_fn, stride, downsample))
+        layers.append(block(self.curr_planes, planes, bn_fn, stride, downsample, **kwargs))
         self.curr_planes = planes * block.expansion
         for _ in range(1, blocks):
-            layers.append(block(self.curr_planes, planes, bn_fn))
+            layers.append(block(self.curr_planes, planes, bn_fn, **kwargs))
 
-        return TwoInputSequential(*layers)
+        return ThreeInputSequential(*layers)
 
     def _flatten(self, x):
         sz = x.size()
         return x.view(-1, sz[-3], sz[-2], sz[-1]) if x.dim() >=5 else x
 
-    def forward(self, x, params=None):
+    def forward(self, x, params=None, step_num=0):
+
+        print(step_num)
 
         conv1_params = None
         bn1_params = None
@@ -249,15 +251,15 @@ class ResNet(nn.Module):
 
         x = self._flatten(x)
         x = self.conv1(x, conv1_params)
-        x = self.bn1(x, bn1_params)
+        x = self.bn1(x, bn1_params, step_num)
         x = self.relu(x)
         if self.initial_pool:
             x = self.maxpool(x)
-
-        x = self.layer1(x, layer1_params)
-        x = self.layer2(x, layer2_params)
-        x = self.layer3(x, layer3_params)
-        x = self.layer4(x, layer4_params)
+        
+        x = self.layer1(x, params=layer1_params, step_num=step_num)
+        x = self.layer2(x, params=layer2_params, step_num=step_num)
+        x = self.layer3(x, params=layer3_params, step_num=step_num)
+        x = self.layer4(x, params=layer4_params, step_num=step_num)
 
         x = self.avgpool(x)
         x = x.view(x.size(0), -1)
@@ -291,7 +293,7 @@ class FilmResNet(ResNet):
                 }
         return param_dict
 
-    def forward(self, x, param_dict):
+    def forward(self, x, param_dict, step_num=0):
         """
         Forward pass through ResNet. Same logic as standard ResNet, but expects a dictionary of FiLM parameters to be
         provided (by adaptation network objects).
@@ -349,6 +351,17 @@ def resnet18_84(pretrained=False, pretrained_model_path=None, batch_norm='basic'
 
     if pretrained:
         ckpt_dict = torch.load(pretrained_model_path, map_location='cpu')
+
+        # Per-Step Batch Normalization Weights and Biases (BNWB):
+        if kwargs and kwargs['use_per_step_bn_statistics'] and kwargs['num_grad_steps']:
+            for k, m in dict(model.named_modules()).items():
+                if isinstance(m, BatchNorm2d) or isinstance(m, TaskNorm):
+                    for p in ['weight', 'bias', 'running_mean', 'running_var']:
+                        full_key = f'{k}.{p}'
+                        t = ckpt_dict['state_dict'][full_key]
+                        if len(t.size()) == 1:
+                            ckpt_dict['state_dict'][full_key] = t.repeat(kwargs['num_grad_steps'], 1)
+
         model.load_state_dict(ckpt_dict['state_dict'])
 
     return model

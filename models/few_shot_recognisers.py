@@ -64,7 +64,9 @@ class FewShotRecogniser(nn.Module):
             pretrained=pretrained,
             pretrained_model_path=self.args.pretrained_extractor_path,
             batch_norm=self.args.batch_normalisation,
-            with_film=self.args.adapt_features
+            with_film=self.args.adapt_features,
+            use_per_step_bn_statistics=args.use_per_step_bn_statistics,
+            num_grad_steps=args.num_grad_steps
         )
         if not self.args.learn_extractor:
             self._freeze_extractor()
@@ -87,7 +89,7 @@ class FewShotRecogniser(nn.Module):
             self.feature_adapter = NullAdapter() 
          
         # configure classifier
-        if self.args.classifier == 'linear': 
+        if self.args.classifier == 'linear':
             # classifier head will instead be appended per-task during train/test
             self.classifier = LinearClassifier(self.feature_extractor.output_size)
         elif self.args.classifier == 'versa':
@@ -120,7 +122,7 @@ class FewShotRecogniser(nn.Module):
         self.feature_extractor.cuda(1)
         self.feature_adapter.cuda(1)
     
-    def _get_features(self, clips, feature_adapter_params, ops_counter=None, context=False):
+    def _get_features(self, clips, feature_adapter_params, ops_counter=None, context=False, step_num=0):
         """
         Function that passes clips through an adapted feature extractor to get adapted (and flattened) frame features.
         :param clips: (torch.Tensor) Tensor of clips, each composed of self.args.clip_length contiguous frames.
@@ -133,9 +135,9 @@ class FewShotRecogniser(nn.Module):
         t1 = time.time()
         if self.args.use_two_gpus:
             clips = clips.cuda(1)
-            features = self.feature_extractor(clips, feature_adapter_params).cuda(0)
+            features = self.feature_extractor(clips, feature_adapter_params, step_num).cuda(0)
         else:
-            features = self.feature_extractor(clips, feature_adapter_params)
+            features = self.feature_extractor(clips, feature_adapter_params, step_num)
 
         if ops_counter:
             if self.device != torch.device('cpu'): torch.cuda.synchronize()
@@ -144,7 +146,7 @@ class FewShotRecogniser(nn.Module):
             
         return features
     
-    def _get_features_in_batches(self, clip_loader, feature_adapter_params, ops_counter=None, context=False):
+    def _get_features_in_batches(self, clip_loader, feature_adapter_params, ops_counter=None, context=False, step_num=0):
         """
         Function that passes clips in batches through an adapted feature extractor to get adapted (and flattened) frame features.
         :param clip_loader: (torch.utils.data.DataLoader or torch.Tensor) Loader for clips, each composed of self.args.clip_length contiguous frames.
@@ -165,11 +167,11 @@ class FewShotRecogniser(nn.Module):
 
                 batch_clips = batch_clips.cuda(1)
 
-                batch_features = self.feature_extractor(batch_clips, feature_adapter_params).cuda(0)
+                batch_features = self.feature_extractor(batch_clips, feature_adapter_params, step_num).cuda(0)
 
             else:
 
-                batch_features = self.feature_extractor(batch_clips, feature_adapter_params)
+                batch_features = self.feature_extractor(batch_clips, feature_adapter_params, step_num)
 
             if ops_counter:
                 if self.device != torch.device('cpu'): torch.cuda.synchronize()
@@ -345,7 +347,8 @@ class MultiStepFewShotRecogniser(FewShotRecogniser):
                                             batch_context_clips,
                                             ops_counter=ops_counter,
                                             context=True,
-                                            params=params_dict)
+                                            params=params_dict,
+                                            step_num=i)
                 t1 = time.time()
                 batch_context_loss = loss_fn(batch_context_logits, batch_context_labels)
                 # if optimizer_type == 'lslr':
@@ -373,7 +376,7 @@ class MultiStepFewShotRecogniser(FewShotRecogniser):
         return params_dict
 
  
-    def predict(self, clips, ops_counter=None, context=False, params=None):
+    def predict(self, clips, ops_counter=None, context=False, params=None, step_num=0):
         """
         Function that processes target clips in batches to get logits over object classes for each clip.
         :param clips: (np.ndarray or torch.Tensor) Clips (either as paths or tensors), each composed of self.args.clip_length contiguous frames.
@@ -400,13 +403,13 @@ class MultiStepFewShotRecogniser(FewShotRecogniser):
             self.feature_adapter_params = self._get_feature_adapter_params(task_embedding, ops_counter)
             feature_extractor_params = self.feature_adapter_params
 
-        features = self._get_features_in_batches(clip_loader, feature_extractor_params, ops_counter, context=context)
+        features = self._get_features_in_batches(clip_loader, feature_extractor_params, ops_counter, context=context, step_num=step_num)
 
         features = self._pool_features(features, ops_counter)
 
         return self.classifier.predict(features, ops_counter, classifier_params)
     
-    def predict_a_batch(self, clips, ops_counter=None, context=False, params=None):
+    def predict_a_batch(self, clips, ops_counter=None, context=False, params=None, step_num=0):
         """
         Function that processes a batch of clips to get logits over object classes for each clip.
         :param clips: (torch.Tensor) Tensor of clips, each composed of self.args.clip_length contiguous frames.
@@ -432,7 +435,7 @@ class MultiStepFewShotRecogniser(FewShotRecogniser):
             self.feature_adapter_params = self._get_feature_adapter_params(task_embedding, ops_counter)
             feature_extractor_params = self.feature_adapter_params
 
-        features = self._get_features(clips, feature_extractor_params, ops_counter, context=context)
+        features = self._get_features(clips, feature_extractor_params, ops_counter, context=context, step_num=step_num)
         features = self._pool_features(features, ops_counter)
         
         return self.classifier.predict(features, ops_counter, classifier_params)
