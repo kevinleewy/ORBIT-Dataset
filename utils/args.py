@@ -89,6 +89,8 @@ def parse_args(learner='default'):
                         help="Epoch to turn on validation (default: 5).")
     parser.add_argument("--learning_rate", "-lr", type=float, default=0.0001,
                         help="Learning rate (default: 0.0001).")
+    parser.add_argument("--min_learning_rate", type=float, default=0.000001,
+                        help="Min learning rate (default: 0.000001).")
     parser.add_argument("--batch_size", type=int, default=256,
                         help="Batch size when processing context and target set. Used for training/testing FineTuner, testing MAML, and training/testing CNAPs/ProtoNets with LITE (default: 256).")
     parser.add_argument("--tasks_per_batch", type=int, default=16,
@@ -103,6 +105,8 @@ def parse_args(learner='default'):
                         help="If True, do model parallelism over 2 GPUs.")
     parser.add_argument("--print_by_step", action="store_true",
                         help="Print training by step (otherwise print by epoch).")
+    parser.add_argument("--use_cosine_annealing_lr", default=False, action="store_true",
+                        help="If True, do Cosine Annealing of Meta-Optimizer Learning Rate (CA)")
 
     # specific parameters
     if learner == 'gradient-learner':

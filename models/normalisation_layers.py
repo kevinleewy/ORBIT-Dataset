@@ -112,10 +112,12 @@ class BatchNorm2d(nn.BatchNorm2d):
         used for normalization (i.e. in eval mode when buffers are not None).
         """
 
-        # Per-Step Batch Normalization Weights and Biases (BNWB):
         if self.use_per_step_bn_statistics:
+            #Per-Step Batch Normalization Running Statistics (BNRS)
             running_mean = self.running_mean[step_num]
             running_var = self.running_var[step_num]
+
+            # Per-Step Batch Normalization Weights and Biases (BNWB)
             weight = weight[step_num]
             bias = bias[step_num]
         else:

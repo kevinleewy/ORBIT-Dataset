@@ -83,17 +83,7 @@ class Learner:
         self.train_task_fn = self.train_task_in_batches if self.args.with_lite else self.train_task
 
         self.optimizer_type = 'lslr' if self.args.use_learnable_learning_rates else 'sgd'
-        param_dict = self.get_inner_loop_parameter_dict(params=self.model.named_parameters())
-        self.inner_lrs_dict = {}
-
-        if self.args.classifier == 'linear':
-            additional_param_keys = ['classifier.linear.weight', 'classifier.linear.bias']
-        else:
-            additional_param_keys = []
-
-        for key in list(param_dict.keys()) + additional_param_keys:
-            self.inner_lrs_dict[key] = torch.tensor([self.args.inner_learning_rate] * (self.args.num_grad_steps + 1),
-                requires_grad=self.args.use_learnable_learning_rates)
+        self.init_inner_lr()
 
 
     def init_dataset(self):
@@ -141,6 +131,20 @@ class Learner:
         self.zero_grads(inner_loop_model)
         return inner_loop_model
 
+    def init_inner_lr(self):
+
+        param_dict = self.get_inner_loop_parameter_dict(params=self.model.named_parameters())
+        self.inner_lrs_dict = {}
+
+        if self.args.classifier == 'linear':
+            additional_param_keys = ['classifier.linear.weight', 'classifier.linear.bias']
+        else:
+            additional_param_keys = []
+
+        for key in list(param_dict.keys()) + additional_param_keys:
+            self.inner_lrs_dict[key] = torch.tensor([self.args.inner_learning_rate] * (self.args.num_grad_steps + 1),
+                requires_grad=self.args.use_learnable_learning_rates)
+
     def get_inner_loop_parameter_dict(self, params):
         """
         Returns a dictionary with the parameters to use for inner loop updates.
@@ -183,6 +187,11 @@ class Learner:
                                 extractor_scale_factor=extractor_scale_factor,
                                 additional_params=list(self.inner_lrs_dict.values()))
 
+            if self.args.use_cosine_annealing_lr:
+                self.scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer=self.optimizer,
+                                                    T_max=self.args.epochs,
+                                                    eta_min=self.args.min_learning_rate)
+
             for epoch in range(self.args.epochs):
                 losses = []
                 since = time.time()
@@ -191,6 +200,7 @@ class Learner:
         
                 train_tasks = self.train_queue.get_tasks()
                 total_steps = len(train_tasks)
+                
                 for step, task_dict in enumerate(train_tasks):
 
                     t1 = time.time()
@@ -205,6 +215,9 @@ class Learner:
                     if self.args.print_by_step:
                         current_stats_str = stats_to_str(self.train_evaluator.get_current_stats())
                         print_and_log(self.logfile, 'epoch [{}/{}][{}/{}], train loss: {:.7f}, {:}, time/task: {:d}m{:02d}s'.format(epoch+1, self.args.epochs, step+1, total_steps, task_loss.item(), current_stats_str.strip(), int(task_time / 60), int(task_time % 60)))
+
+                if self.args.use_cosine_annealing_lr:
+                    self.scheduler.step()
 
                 mean_stats = self.train_evaluator.get_mean_stats()
                 seconds = time.time() - since
