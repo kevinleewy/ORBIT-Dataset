@@ -187,7 +187,13 @@ class Learner:
                                 extractor_scale_factor=extractor_scale_factor,
                                 additional_params=list(self.inner_lrs_dict.values()))
 
-            if self.args.use_cosine_annealing_lr:
+            if self.args.anneal_lr == 'onecycle':
+                self.scheduler = torch.optim.lr_scheduler.OneCycleLR(optimizer=self.optimizer,
+                                                    max_lr=self.args.max_learning_rate,
+                                                    epochs=self.args.epochs,
+                                                    steps_per_epoch=len(self.train_queue.get_tasks()))
+            
+            elif self.args.anneal_lr == 'cosine':
                 self.scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer=self.optimizer,
                                                     T_max=self.args.epochs,
                                                     eta_min=self.args.min_learning_rate)
@@ -212,11 +218,14 @@ class Learner:
                         self.optimizer.step()
                         self.optimizer.zero_grad()
 
+                        if self.args.anneal_lr == 'onecycle':
+                            self.scheduler.step()
+
                     if self.args.print_by_step:
                         current_stats_str = stats_to_str(self.train_evaluator.get_current_stats())
                         print_and_log(self.logfile, 'epoch [{}/{}][{}/{}], train loss: {:.7f}, {:}, time/task: {:d}m{:02d}s'.format(epoch+1, self.args.epochs, step+1, total_steps, task_loss.item(), current_stats_str.strip(), int(task_time / 60), int(task_time % 60)))
 
-                if self.args.use_cosine_annealing_lr:
+                if self.args.anneal_lr == 'cosine':
                     self.scheduler.step()
 
                 mean_stats = self.train_evaluator.get_mean_stats()
@@ -431,13 +440,19 @@ class Learner:
         self.test_evaluator.reset()
     
     def save_checkpoint(self, epoch):
-        torch.save({
+
+        checkpoint = {
             'epoch': epoch,
             'inner_lrs_dict': self.inner_lrs_dict,
             'model_state_dict': self.model.state_dict(),
             'optimizer_state_dict': self.optimizer.state_dict(),
             'best_stats': self.validation_evaluator.get_current_best_stats()
-        }, os.path.join(self.checkpoint_dir, 'checkpoint.pt'))
+        }
+
+        if self.scheduler:
+            checkpoint['scheduler_state_dict'] = self.scheduler.state_dict()
+
+        torch.save(checkpoint, os.path.join(self.checkpoint_dir, 'checkpoint.pt'))
 
     def load_checkpoint(self):
         checkpoint = torch.load(os.path.join(self.checkpoint_dir, 'checkpoint.pt'))
@@ -446,6 +461,9 @@ class Learner:
         self.model.load_state_dict(checkpoint['model_state_dict'])
         self.optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
         self.validation_evaluator.replace(checkpoint['best_stats'])
+
+        if self.scheduler and checkpoint['scheduler_state_dict'] :
+            self.scheduler.load_state_dict(checkpoint['scheduler_state_dict'])
 
 if __name__ == "__main__":
     main()
